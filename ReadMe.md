@@ -1,5 +1,5 @@
 <center>
     <h1>
-    A Generalized Blockchain
+    Coming soon...
     </h1>
 </center>
