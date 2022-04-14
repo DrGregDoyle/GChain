@@ -1,8 +1,7 @@
 '''
 The Wallet class
 
-#TODO:
-    1) Verify that all binary strings in cryptography
+
 '''
 import pandas as pd
 
@@ -15,46 +14,77 @@ from hashlib import sha256
 
 class Wallet:
 
-    def __init__(self, bits=128, checksum_bits=4, seed=None):
+    def __init__(self, bits=128, checksum_bits=4):
         '''
         We create a deterministic wallet where the seed will be expressed as dictionary words.
         We follow common practice by first generating a random_number, hashing the number and using as checksum,
             then dividing the random_number + checksum into 11-bit chunks and using these chunks as index in the dictionary
             NB: We 2048 words in the dictionary as 2^11 = 2048.
 
-        In order to re-use a seed to instantiate a wallet of the same form, we use the first 128bits of the sha256
-            hash of the seed. In this fashion, seeds close to one another generate different seed phrases
+        '''
+        self.bits = bits
+        self.checksum_bits = checksum_bits
+
+        '''Verify entropy + checksum_bits'''
+        try:
+            assert (self.bits + self.checksum_bits) % 11 == 0
+        except AssertionError:
+            return None
+
+    def get_seed_phrase(self, seed=None) -> list:
+        '''
+        Will generate a seed phrase - default is 128 bit entropy w 4 bits as checksum.
+            For other bitsizes, the bitlength of entropy + checksum must be divisible by 11
         '''
 
+        '''Generate new seed or use submitted'''
         if seed is None:
-            random_number = 0
-            while random_number.bit_length() != bits:
-                random_number = secrets.randbits(bits)
+            seed = 0
+            while seed.bit_length() < self.bits:
+                seed = secrets.randbits(self.bits)
         else:
-            random_number = seed
+            seed = seed
 
-        seed_hash = sha256(str(random_number).encode()).hexdigest()
-        hash_num = int(seed_hash, 16)
-        hash_binary = bin(hash_num)
-        self.entropy = hash_binary[2:2 + bits]  # entropy is a string of the form '0b<...>' where '0b' is a 2byte string
-        entropy_hash = sha256(self.entropy.encode()).hexdigest()
-        check_sum = bin(int(entropy_hash, 16))[2: checksum_bits + 2]  # Get the first few bits from the entropy hash
-        self.entropy += check_sum
+        '''Create index string = entropy + checksum'''
+        entropy = bin(seed)[2:2 + self.bits]
+        checksum_hash = sha256(entropy.encode()).hexdigest()
+        check_sum = bin(int(checksum_hash, 16))[2: 2 + self.checksum_bits]
+        index_string = entropy + check_sum
 
-        try:
-            assert len(self.entropy) % 11 == 0
-        except AssertionError:
-            print(len(self.entropy))
-
+        '''Find indices'''
         index_list = []
-        for x in range(0, len(self.entropy) // 11):
-            index_string = self.entropy[x * 11: (x + 1) * 11]
-            index_list.append(int(index_string, 2))
+        for x in range(0, len(index_string) // 11):
+            indice = index_string[x * 11: (x + 1) * 11]
+            index_list.append(int(indice, 2))
 
-        df_dict = pd.read_csv('english_dictionary.txt', header=None)
+        '''Load dictionary'''
+        df_dict = pd.read_csv('./english_dictionary.txt', header=None)
 
+        '''Find indexed words and save to list'''
         word_list = []
         for i in index_list:
             word_list.append(df_dict.iloc[[i]].values[0][0])
+        return word_list
 
-        print(word_list)
+    def recover_seed(self, seed_phrase: list):
+        '''
+        Using the seed phrase, we recover the original seed.
+        '''
+
+        '''Load dictionary'''
+        df_dict = pd.read_csv('./english_dictionary.txt', header=None)
+
+        '''Get index from word'''
+        number_list = []
+        for s in seed_phrase:
+            number_list.append(df_dict.index[df_dict[0] == s].values[0])
+
+        '''Change numbers into binary add concat as string'''
+        index_string = ''
+        for n in number_list:
+            index_string += format(n, "011b")
+
+        '''Verify'''
+        entropy = index_string[:self.bits]
+        seed = int(entropy, 2)
+        return seed
