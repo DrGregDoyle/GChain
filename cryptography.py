@@ -140,7 +140,7 @@ def generate_rsa_keys(bits=256):
     return public_key, private_key
 
 
-def generate_dl_keys(bits=256, generator=None, prime=None):
+def generate_dl_keys(bits=256, generator=None, prime=None, private_key=None):
     '''
     We generate discrete log public and private keys
     '''
@@ -155,14 +155,18 @@ def generate_dl_keys(bits=256, generator=None, prime=None):
     else:
         g = generator
 
-    K = secrets.randbelow(p - 1)
+    '''We can use a submitted private key or generate a new one'''
+    if private_key is None:
+        K = secrets.randbelow(p - 1)
+    else:
+        K = private_key
     k = pow(g, K, p)
     public_key = [hex(k), hex(g), hex(p)]
     private_key = hex(K)
     return public_key, private_key
 
 
-def generate_ecc_keys(bits=256, generator=None, prime=None, a=0, b=7):
+def generate_ecc_keys(bits=256, generator=None, prime=None, a=0, b=7, private_key=None):
     '''
     We use the Secp256k1 curve y^2 = x^3 + 7
     We will generate a random generator and prime of 256 bits
@@ -183,8 +187,11 @@ def generate_ecc_keys(bits=256, generator=None, prime=None, a=0, b=7):
     else:
         g = generator
 
-    '''Choose random number = private key'''
-    k = secrets.randbelow(p - 1)
+    '''Choose private_key or use submitted value'''
+    if private_key is None:
+        k = secrets.randbelow(p - 1)
+    else:
+        k = private_key
 
     '''Public key = kg'''
     public_point = curve.scalar_multiplication(k, g)

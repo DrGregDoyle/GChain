@@ -8,6 +8,7 @@ import pandas as pd
 '''Imports'''
 import secrets
 from hashlib import sha256, sha512
+from cryptography import generate_ecc_keys, generate_dl_keys
 
 '''Wallet Class'''
 
@@ -16,8 +17,12 @@ class Wallet:
     '''Formatting Variables'''
     MIN_EXP = 7
     DICT_EXP = 11
+    BITCOIN_PRIME = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
+    # Note that values below are int types not strings
+    BITCOIN_ECC_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
+                             0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
 
-    def __init__(self, bits=128, checksum_bits=4, seed=None):
+    def __init__(self, bits=128, checksum_bits=4, seed=None, use_ecc=True, use_dl=False, use_rsa=False):
         '''
         We create a deterministic wallet where the seed will be expressed as dictionary words.
         We follow common practice by first generating a random_number, hashing the number and using as checksum,
@@ -25,6 +30,14 @@ class Wallet:
             NB: We 2048 words in the dictionary as 2^11 = 2048.
 
         '''
+        '''Indicate encryption method'''
+        if not use_ecc and not use_rsa:
+            self.encryption_type = 'dl'
+        elif not use_ecc and not use_dl:
+            self.encryption_type = 'rsa'
+        else:
+            self.encryption_type = 'ecc'
+
         '''Automatically adjust bitlength and checksum if out of bounds'''
         if bits < pow(2, self.MIN_EXP):
             bits = pow(2, self.MIN_EXP)
@@ -62,19 +75,11 @@ class Wallet:
 
         return seed
 
-    def get_seed_phrase(self, seed=None) -> list:
+    def get_seed_phrase(self, seed: int) -> list:
         '''
         Will generate a seed phrase - default is 128 bit entropy w 4 bits as checksum.
             For other bitsizes, the bitlength of entropy + checksum must be divisible by 11
         '''
-
-        '''Generate new seed or use submitted'''
-        if seed is None:
-            seed = 0
-            while seed.bit_length() < self.bits:
-                seed = secrets.randbits(self.bits)
-        else:
-            seed = seed
 
         '''Create index string = entropy + checksum'''
         entropy = bin(seed)[2:2 + self.bits]
@@ -120,5 +125,30 @@ class Wallet:
         seed = int(entropy, 2)
         return seed
 
-    def generate_master_keys(self, seed=None):
-        pass
+    def generate_master_keys(self, seed: int):
+        '''
+        We use the seed to generate a hash value of 512 bits
+        We use the first 256bits to generate the keys
+        We save the remaining 256bits as the Master Chain Code
+        '''
+        seed_hash512 = sha512(str(seed).encode()).hexdigest()
+        binary_string_512 = bin(int(seed_hash512, 16))[2:]
+        private_key_string = binary_string_512[0:256]
+        master_chain_string = binary_string_512[256:]
+
+        private_key = int(private_key_string, 2)
+        chain_code = int(master_chain_string, 2)
+
+        print(f'Private key int: {private_key}')
+        print(f'Chain code int: {chain_code}')
+
+        if self.encryption_type == 'rsa':
+            # generate RSA keys
+            pass
+        elif self.encryption_type == 'dl':
+            pub, priv = generate_dl_keys(prime=self.BITCOIN_PRIME)
+            return [pub, priv]
+        else:
+            pub, priv = generate_ecc_keys(generator=self.BITCOIN_ECC_GENERATOR, prime=self.BITCOIN_PRIME,
+                                          private_key=private_key)
+            return [pub, priv]
