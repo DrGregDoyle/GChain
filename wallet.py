@@ -8,7 +8,7 @@ import pandas as pd
 '''Imports'''
 import secrets
 from hashlib import sha256, sha512
-from cryptography import generate_ecc_keys, generate_dl_keys
+from cryptography import generate_ecc_keys, generate_dl_keys, generate_above_below_primes, generate_rsa_keys
 
 '''Wallet Class'''
 
@@ -139,12 +139,14 @@ class Wallet:
         private_key = int(private_key_string, 2)
         chain_code = int(master_chain_string, 2)
 
-        print(f'Private key int: {private_key}')
-        print(f'Chain code int: {chain_code}')
+        # print(f'Private key int: {private_key}')
+        # print(f'Chain code int: {chain_code}')
 
         if self.encryption_type == 'rsa':
-            # generate RSA keys
-            pass
+            p, q = generate_above_below_primes(seed)
+            # print(f'p: {p}, q: {q}, seed: {seed}')
+            pub, priv = generate_rsa_keys(prime1=p, prime2=q, encryption_key=seed)
+            return [pub, priv]
         elif self.encryption_type == 'dl':
             pub, priv = generate_dl_keys(prime=self.BITCOIN_PRIME)
             return [pub, priv]

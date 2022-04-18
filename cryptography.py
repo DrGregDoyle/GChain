@@ -123,17 +123,51 @@ def tonelli_shanks(n: int, p: int):
 '''Cryptographic Keys'''
 
 
-def generate_rsa_keys(bits=256):
+def generate_above_below_primes(midpoint: int):
+    '''
+    We generate RSA keys by taking p and q to be the first primes above and below the midpoint
+    '''
+
+    above_prime = midpoint
+    below_prime = midpoint - 1
+    m_a = midpoint
+    m_b = midpoint - 1
+
+    '''Prime above'''
+    while not primefac.isprime(above_prime):
+        m_a += 1
+        above_prime = m_a
+
+    '''Prime below'''
+    while not primefac.isprime(below_prime):
+        m_b -= 1
+        below_prime = m_b
+
+    return above_prime, below_prime
+
+
+def generate_rsa_keys(bits=256, prime1=None, prime2=None, encryption_key=None):
     '''
     We generate public and private keys using rsa method
     '''
-    p = generate_nbit_prime(bits)
-    q = generate_nbit_prime(bits)
+    if prime1 is None:
+        p = generate_nbit_prime(bits)
+    else:
+        p = prime1
+
+    if prime2 is None:
+        q = generate_nbit_prime(bits)
+    else:
+        q = prime2
     n = p * q
     phi_n = (p - 1) * (q - 1)
-    e = 0
-    while math.gcd(e, phi_n) > 1:
-        e = secrets.randbelow(phi_n - 1)
+
+    if encryption_key is None:
+        e = 0
+        while math.gcd(e, phi_n) > 1:
+            e = secrets.randbelow(phi_n - 1)
+    else:
+        e = encryption_key
     d = pow(e, -1, phi_n)
     public_key = [hex(e), hex(n)]
     private_key = hex(d)
