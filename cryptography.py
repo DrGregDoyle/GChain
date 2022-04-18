@@ -121,48 +121,98 @@ def tonelli_shanks(n: int, p: int):
 
 
 '''Cryptographic Keys'''
+'''
+For RSA, we don't have a way of retrieving the public key from the private key.
+Further, we don't have a way to get p and q from n without factoring the number.
+Hence given a random number s, we find the first prime above and below this number,
+    and e will be the greatest number lower than s satisfying (e, phi(n)) = 1
+
+'''
 
 
-def generate_rsa_keys(bits=256):
+def generate_above_below_primes(midpoint: int):
+    '''
+    We generate RSA keys by taking p and q to be the first primes above and below the midpoint
+    '''
+
+    above_prime = midpoint
+    below_prime = midpoint - 1
+    m_a = midpoint
+    m_b = midpoint - 1
+
+    '''Prime above'''
+    while not primefac.isprime(above_prime):
+        m_a += 1
+        above_prime = m_a
+
+    '''Prime below'''
+    while not primefac.isprime(below_prime):
+        m_b -= 1
+        below_prime = m_b
+
+    return above_prime, below_prime
+
+
+def generate_rsa_keys(bits=256, seed=None):
     '''
     We generate public and private keys using rsa method
     '''
-    p = generate_nbit_prime(bits)
-    q = generate_nbit_prime(bits)
+
+    if seed is None:
+        seed = secrets.randbits(bits)
+    else:
+        seed = seed
+
+    p, q = generate_above_below_primes(seed)
+
+    assert primefac.isprime(p)
+    assert primefac.isprime(q)
+
     n = p * q
     phi_n = (p - 1) * (q - 1)
-    e = 0
+
+    e = seed
     while math.gcd(e, phi_n) > 1:
-        e = secrets.randbelow(phi_n - 1)
+        e -= 1
     d = pow(e, -1, phi_n)
+
+    assert math.gcd(e, phi_n) == 1
+    assert e * d % phi_n == 1
+
     public_key = [hex(e), hex(n)]
     private_key = hex(d)
     return public_key, private_key
 
 
-def generate_dl_keys(bits=256, generator=None, prime=None):
+def generate_dl_keys(bits=256, generator=None, prime=None, private_key=None):
     '''
     We generate discrete log public and private keys
     '''
 
-    if prime == None:
+    if prime is None:
         p = generate_nbit_prime(bits)
     else:
         p = prime
 
-    if generator == None:
+    if generator is None:
         g = find_generator(p)
     else:
         g = generator
 
-    K = secrets.randbelow(p - 1)
+    assert is_generator(g, p)
+
+    '''We can use a submitted private key or generate a new one'''
+    if private_key is None:
+        K = secrets.randbelow(p - 1)
+    else:
+        K = private_key
     k = pow(g, K, p)
     public_key = [hex(k), hex(g), hex(p)]
     private_key = hex(K)
     return public_key, private_key
 
 
-def generate_ecc_keys(bits=256, generator=None, prime=None, a=0, b=7):
+def generate_ecc_keys(bits=256, generator=None, prime=None, a=0, b=7, private_key=None):
     '''
     We use the Secp256k1 curve y^2 = x^3 + 7
     We will generate a random generator and prime of 256 bits
@@ -183,8 +233,11 @@ def generate_ecc_keys(bits=256, generator=None, prime=None, a=0, b=7):
     else:
         g = generator
 
-    '''Choose random number = private key'''
-    k = secrets.randbelow(p - 1)
+    '''Choose private_key or use submitted value'''
+    if private_key is None:
+        k = secrets.randbelow(p - 1)
+    else:
+        k = private_key
 
     '''Public key = kg'''
     public_point = curve.scalar_multiplication(k, g)
