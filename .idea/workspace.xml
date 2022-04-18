@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="4a808a06-958d-4442-94e0-63ac90b712a4" name="Changes" comment="Added ECC and DL key generation. We use the Bitcoin prime as default.&#10;RSA will need a find prime below/above method">
+    <list default="true" id="4a808a06-958d-4442-94e0-63ac90b712a4" name="Changes" comment="Added">
+      <change afterPath="$PROJECT_DIR$/block.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/transaction.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/utxo.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/cryptography.py" beforeDir="false" afterPath="$PROJECT_DIR$/cryptography.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/unit_tests/test_wallet.py" beforeDir="false" afterPath="$PROJECT_DIR$/unit_tests/test_wallet.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/wallet.py" beforeDir="false" afterPath="$PROJECT_DIR$/wallet.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />

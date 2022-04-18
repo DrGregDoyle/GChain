@@ -8,7 +8,7 @@ import pandas as pd
 '''Imports'''
 import secrets
 from hashlib import sha256, sha512
-from cryptography import generate_ecc_keys, generate_dl_keys, generate_above_below_primes, generate_rsa_keys
+from cryptography import generate_ecc_keys, generate_dl_keys, generate_rsa_keys
 
 '''Wallet Class'''
 
