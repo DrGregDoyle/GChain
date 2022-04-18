@@ -21,6 +21,9 @@ class Wallet:
     # Note that values below are int types not strings
     BITCOIN_ECC_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
                              0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
+    # Both x and y are generators for Z_p^* for p = the bitcoin prime
+    BITCOIN_ECC_X = 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798
+    BITCOIN_ECC_Y = 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8
 
     def __init__(self, bits=128, checksum_bits=4, seed=None, use_ecc=True, use_dl=False, use_rsa=False):
         '''
@@ -143,14 +146,14 @@ class Wallet:
         # print(f'Chain code int: {chain_code}')
 
         if self.encryption_type == 'rsa':
-            p, q = generate_above_below_primes(seed)
-            # print(f'p: {p}, q: {q}, seed: {seed}')
-            pub, priv = generate_rsa_keys(prime1=p, prime2=q, encryption_key=seed)
+            pub, priv = generate_rsa_keys(bits=self.bits, seed=private_key)
             return [pub, priv]
         elif self.encryption_type == 'dl':
-            pub, priv = generate_dl_keys(prime=self.BITCOIN_PRIME)
+            pub, priv = generate_dl_keys(bits=self.bits, generator=self.BITCOIN_ECC_X, prime=self.BITCOIN_PRIME,
+                                         private_key=private_key)
             return [pub, priv]
         else:
-            pub, priv = generate_ecc_keys(generator=self.BITCOIN_ECC_GENERATOR, prime=self.BITCOIN_PRIME,
+            pub, priv = generate_ecc_keys(bits=self.bits, generator=self.BITCOIN_ECC_GENERATOR,
+                                          prime=self.BITCOIN_PRIME,
                                           private_key=private_key)
             return [pub, priv]

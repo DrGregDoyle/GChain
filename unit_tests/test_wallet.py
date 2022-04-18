@@ -1,5 +1,9 @@
 '''
 Unit tests for the wallet class
+
+TODO: Implement m / purpose / coin_type / account / change / address_index method for multiple cointypes
+
+
 '''
 import secrets
 import primefac
@@ -14,6 +18,10 @@ Test Vars
 BITCOIN_PRIME = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
 BITCOIN_ECC_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
                          0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
+
+# Both x and y are generators for Z_p^* for p = the bitcoin prime
+BITCOIN_ECC_X = 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798
+BITCOIN_ECC_Y = 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8
 
 '''
 Tests
@@ -96,6 +104,10 @@ def test_ecc_keys():
 
     assert point == (x, y)
 
+    seed_ecc = wallet_ecc.recover_seed(wallet_ecc.seed_phrase)
+    wallet2_ecc = Wallet(seed=seed_ecc)
+    assert wallet2_ecc.master_keys == wallet_ecc.master_keys
+
 
 def test_dl_keys():
     '''
@@ -113,21 +125,29 @@ def test_dl_keys():
     K = int(s_K, 16)
 
     assert p == BITCOIN_PRIME
+    assert g == BITCOIN_ECC_X
+    assert pow(g, K, p) == k
 
-    generator_val = pow(g, K, p)
-    assert generator_val == k
+    seed_dl = wallet_dl.recover_seed(wallet_dl.seed_phrase)
+    wallet2_dl = Wallet(seed=seed_dl, use_ecc=False, use_dl=True)
+    assert wallet2_dl.master_keys == wallet_dl.master_keys
 
 
 def test_rsa_keys():
     '''
     We verify the above and below vals are prime
     '''
-    pass
-    # wallet_rsa = Wallet(use_ecc=False, use_rsa=True)
-    # [(s_e, s_n)], s_d = wallet_rsa.master_keys
-    # e = int(s_e, 16)
-    # n = int(s_n, 16)
-    # d = int(s_d, 16)
-    #
-    # message = secrets.randbits(256)
-    # print(message)
+    wallet_rsa = Wallet(use_ecc=False, use_rsa=True)
+    [s_e, s_n], s_d = wallet_rsa.master_keys
+    e = int(s_e, 16)
+    n = int(s_n, 16)
+    d = int(s_d, 16)
+
+    message_256 = secrets.randbits(256) % n
+    encoded = pow(message_256, e, n)
+    decoded = pow(encoded, d, n)
+    assert decoded == message_256
+
+    seed_rsa = wallet_rsa.recover_seed(wallet_rsa.seed_phrase)
+    wallet2_rsa = Wallet(seed=seed_rsa, use_ecc=False, use_rsa=True)
+    assert wallet2_rsa.master_keys == wallet_rsa.master_keys

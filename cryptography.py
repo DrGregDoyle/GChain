@@ -121,6 +121,13 @@ def tonelli_shanks(n: int, p: int):
 
 
 '''Cryptographic Keys'''
+'''
+For RSA, we don't have a way of retrieving the public key from the private key.
+Further, we don't have a way to get p and q from n without factoring the number.
+Hence given a random number s, we find the first prime above and below this number,
+    and e will be the greatest number lower than s satisfying (e, phi(n)) = 1
+
+'''
 
 
 def generate_above_below_primes(midpoint: int):
@@ -146,29 +153,32 @@ def generate_above_below_primes(midpoint: int):
     return above_prime, below_prime
 
 
-def generate_rsa_keys(bits=256, prime1=None, prime2=None, encryption_key=None):
+def generate_rsa_keys(bits=256, seed=None):
     '''
     We generate public and private keys using rsa method
     '''
-    if prime1 is None:
-        p = generate_nbit_prime(bits)
-    else:
-        p = prime1
 
-    if prime2 is None:
-        q = generate_nbit_prime(bits)
+    if seed is None:
+        seed = secrets.randbits(bits)
     else:
-        q = prime2
+        seed = seed
+
+    p, q = generate_above_below_primes(seed)
+
+    assert primefac.isprime(p)
+    assert primefac.isprime(q)
+
     n = p * q
     phi_n = (p - 1) * (q - 1)
 
-    if encryption_key is None:
-        e = 0
-        while math.gcd(e, phi_n) > 1:
-            e = secrets.randbelow(phi_n - 1)
-    else:
-        e = encryption_key
+    e = seed
+    while math.gcd(e, phi_n) > 1:
+        e -= 1
     d = pow(e, -1, phi_n)
+
+    assert math.gcd(e, phi_n) == 1
+    assert e * d % phi_n == 1
+
     public_key = [hex(e), hex(n)]
     private_key = hex(d)
     return public_key, private_key
@@ -179,15 +189,17 @@ def generate_dl_keys(bits=256, generator=None, prime=None, private_key=None):
     We generate discrete log public and private keys
     '''
 
-    if prime == None:
+    if prime is None:
         p = generate_nbit_prime(bits)
     else:
         p = prime
 
-    if generator == None:
+    if generator is None:
         g = find_generator(p)
     else:
         g = generator
+
+    assert is_generator(g, p)
 
     '''We can use a submitted private key or generate a new one'''
     if private_key is None:
