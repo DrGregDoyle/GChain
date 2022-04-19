@@ -19,18 +19,18 @@ var         | var           | var                   | signature_script
 
 #TODO: Change script_length to variable length integer
 Variable length integer:
-/********************\
-The way the variable length integer works is:
 
-Look at the first byte
-If that first byte is less than 253, use the byte literally
-If that first byte is 253, read the next two bytes as a little endian 16-bit number (total bytes read = 3)
-If that first byte is 254, read the next four bytes as a little endian 32-bit number (total bytes read = 5)
-If that first byte is 255, read the next eight bytes as a little endian 64-bit number (total bytes read = 9)
-\*********************/
+The way the variable length integer works is:
+    Look at the first byte
+    If that first byte is less than 253, use the byte literally
+    If that first byte is 253, read the next two bytes as a little endian 16-bit number (total bytes read = 3)
+    If that first byte is 254, read the next four bytes as a little endian 32-bit number (total bytes read = 5)
+    If that first byte is 255, read the next eight bytes as a little endian 64-bit number (total bytes read = 9)
+
 
 
 '''
+import secrets
 
 '''Imports'''
 from hashlib import sha256
@@ -59,8 +59,25 @@ class UTXO:
         return self.tx_id + self.tx_index + self.script_length + self.signature_script + self.sequence
 
 
+class OUTPUT_UTXO:
+    AMOUNT_BYTES = 8
+    LENGTH_BYTES = 8
+
+    def __init__(self, amount: int, unlock_script: str):
+        '''
+        The amount is the amount owned.
+        The unlock script contains the address
+        '''
+        self.amount = format(amount, f'0{2 * self.AMOUNT_BYTES}x')
+        self.unlock_script = unlock_script
+        self.script_length = format(len(self.unlock_script) // 2, f'0{2 * self.LENGTH_BYTES}x')
+
+    def get_raw_output(self):
+        return self.amount + self.script_length + self.unlock_script
+
+
 '''
-TESTING
+Unpack
 '''
 
 
@@ -85,9 +102,38 @@ def decode_raw_utxo(raw_utxo: str, TRANSACTION_BYTES=32, INDEX_BYTES=4, LENGTH_B
     return UTXO(tx_id, tx_index, signature_script, sequence)
 
 
+def decode_raw_output(raw_output: str, AMOUNT_BYTES=8, LENGTH_BYTES=8):
+    '''
+    We read in the hex string and create the output utxo
+    '''
+
+    index1 = 2 * AMOUNT_BYTES
+    index2 = index1 + 2 * LENGTH_BYTES
+
+    amount = int(raw_output[0:index1], 16)
+    script_length = int(raw_output[index1:index2], 16)
+
+    index3 = index2 + 2 * script_length
+
+    unlock_script = raw_output[index2:index3]
+    return OUTPUT_UTXO(amount, unlock_script)
+
+
+'''
+TESTING
+'''
+
+
 def test():
     tx_id = sha256('Transaction'.encode()).hexdigest()
     tx_index = 0
     sig_script = sha256('SignatureScript'.encode()).hexdigest()
     utxo = UTXO(tx_id, tx_index, sig_script)
     return utxo
+
+
+def output_test():
+    amount = 10
+    unlock_script = hex(secrets.randbits(320))[2:]
+    output = OUTPUT_UTXO(amount, unlock_script)
+    return output
