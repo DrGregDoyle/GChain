@@ -38,3 +38,4 @@ def test_raw_transaction():
     t_new = decode_raw_transaction(raw)
 
     assert raw == t_new.get_raw_transaction()
+    assert t.get_id() == t_new.get_id()

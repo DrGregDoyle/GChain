@@ -55,6 +55,9 @@ class Transaction:
 
         return self.version + self.input_count + input_string + self.output_count + output_string + self.locktime
 
+    def get_id(self):
+        return sha256(self.get_raw_transaction().encode()).hexdigest()
+
 
 '''
 Decoding
