@@ -45,18 +45,24 @@ class UTXO:
     LENGTH_BYTES = 8
     SEQUENCE_BYTES = 4
 
-    def __init__(self, tx_id: str, tx_index: int, signature_script: str, sequence=None):
+    def __init__(self, tx_id: str, tx_index: int, signature_script: str, sequence: int):
         self.tx_id = tx_id
         self.tx_index = format(tx_index, f'0{2 * self.INDEX_BYTES}x')
+
+        '''If the hex string has odd parity, it won't be an even number of bytes'''
+        '''Prepend 0 if hex string has odd length. This yields full byte count'''
+        if len(signature_script) % 2 == 1:
+            signature_script = '0' + signature_script
         self.signature_script = signature_script
+
         self.script_length = format(len(self.signature_script) // 2, f'0{2 * self.LENGTH_BYTES}x')
-        if sequence is None:
-            self.sequence = format(0xffffffff, f'0{2 * self.SEQUENCE_BYTES}x')
-        else:
-            self.sequence = format(sequence, f'0{2 * self.SEQUENCE_BYTES}x')
+        self.sequence = format(sequence, f'0{2 * self.SEQUENCE_BYTES}x')
 
     def get_raw_utxo(self):
         return self.tx_id + self.tx_index + self.script_length + self.signature_script + self.sequence
+
+    def get_hex_chars(self):
+        return len(self.get_raw_utxo())
 
 
 class OUTPUT_UTXO:
@@ -69,11 +75,21 @@ class OUTPUT_UTXO:
         The unlock script contains the address
         '''
         self.amount = format(amount, f'0{2 * self.AMOUNT_BYTES}x')
+        '''Handle odd script parity for full byte count'''
+        if len(unlock_script) % 2 == 1:
+            unlock_script = '0' + unlock_script
         self.unlock_script = unlock_script
+
         self.script_length = format(len(self.unlock_script) // 2, f'0{2 * self.LENGTH_BYTES}x')
 
     def get_raw_output(self):
         return self.amount + self.script_length + self.unlock_script
+
+    def get_hex_chars(self):
+        return len(self.get_raw_output())
+
+    def unlock_funds(self):
+        pass
 
 
 '''
@@ -116,6 +132,7 @@ def decode_raw_output(raw_output: str, AMOUNT_BYTES=8, LENGTH_BYTES=8):
     index3 = index2 + 2 * script_length
 
     unlock_script = raw_output[index2:index3]
+
     return OUTPUT_UTXO(amount, unlock_script)
 
 

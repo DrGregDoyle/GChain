@@ -11,7 +11,8 @@ def test_raw_utxo():
     tx_id = sha256('Transaction'.encode()).hexdigest()
     tx_index = 0
     sig_script = hex(secrets.randbits(288))[2:]
-    utxo = UTXO(tx_id, tx_index, sig_script)
+    sequence = pow(2, 32) - 1
+    utxo = UTXO(tx_id, tx_index, sig_script, sequence)
     raw1 = utxo.get_raw_utxo()
     utxo2 = decode_raw_utxo(raw1)
 

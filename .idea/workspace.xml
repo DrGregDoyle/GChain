@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="4a808a06-958d-4442-94e0-63ac90b712a4" name="Changes" comment="Added">
-      <change afterPath="$PROJECT_DIR$/unit_tests/test_utxo.py" afterDir="false" />
+    <list default="true" id="4a808a06-958d-4442-94e0-63ac90b712a4" name="Changes" comment="Added output UTXO as separate class.">
+      <change afterPath="$PROJECT_DIR$/script_engine.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/unit_tests/test_transaction.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/transaction.py" beforeDir="false" afterPath="$PROJECT_DIR$/transaction.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/unit_tests/test_utxo.py" beforeDir="false" afterPath="$PROJECT_DIR$/unit_tests/test_utxo.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/utxo.py" beforeDir="false" afterPath="$PROJECT_DIR$/utxo.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -88,7 +91,14 @@
       <option name="project" value="LOCAL" />
       <updated>1649971277361</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="Added output UTXO as separate class.">
+      <created>1650387559378</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1650387559378</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -107,6 +117,14 @@
     <MESSAGE value="Skeleton for wallet class" />
     <MESSAGE value=" - Modified Wallet so that if incorrect bit/checksum_bit values are used, they get fixed.&#10; - Added the Wallet.get_seed function. The goal is to never save the seed to the Wallet. So we instantiate and it runs get_seed then uses that to generate the keys and the seed_phrase&#10; - seed_phrase is a class var. for the moment. It's needed for testing." />
     <MESSAGE value="Added ECC and DL key generation. We use the Bitcoin prime as default.&#10;RSA will need a find prime below/above method" />
-    <option name="LAST_COMMIT_MESSAGE" value="Added ECC and DL key generation. We use the Bitcoin prime as default.&#10;RSA will need a find prime below/above method" />
+    <MESSAGE value="Added output UTXO as separate class." />
+    <option name="LAST_COMMIT_MESSAGE" value="Added output UTXO as separate class." />
+  </component>
+  <component name="XDebuggerManager">
+    <watches-manager>
+      <configuration name="Python Console Debugger">
+        <watch expression="raw_utxo" />
+      </configuration>
+    </watches-manager>
   </component>
 </project>
