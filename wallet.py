@@ -7,8 +7,9 @@ import pandas as pd
 
 '''Imports'''
 import secrets
+import math
 from hashlib import sha256, sha512
-from cryptography import generate_ecc_keys, generate_dl_keys, generate_rsa_keys
+from cryptography import generate_ecc_keys, generate_dl_keys, generate_rsa_keys, EllipticCurve
 
 '''Wallet Class'''
 
@@ -133,6 +134,7 @@ class Wallet:
         We use the seed to generate a hash value of 512 bits
         We use the first 256bits to generate the keys
         We save the remaining 256bits as the Master Chain Code
+        #TODO: Add a and b as part of public_key
         '''
         seed_hash512 = sha512(str(seed).encode()).hexdigest()
         binary_string_512 = bin(int(seed_hash512, 16))[2:]
@@ -157,3 +159,33 @@ class Wallet:
                                           prime=self.BITCOIN_PRIME,
                                           private_key=private_key)
             return [pub, priv]
+
+    def sign_transaction(self, transaction_hash: str):
+
+        if self.encryption_type == 'dl':
+            # sign_transaction_dl
+            pass
+        elif self.encryption_type == 'rsa':
+            # sign_transaction_rsa
+            pass
+        else:
+            pub, priv = self.master_keys
+            (h_x, h_y), (h_gx, h_gy), h_p = pub
+            h_k = priv
+            p = int(h_p, 16)
+            generator_point = (int(h_gx, 16) % p, int(h_gy, 16) % p)
+            curve = EllipticCurve(a=0, b=7, p=p)
+            k = int(h_k, 16)
+
+            signed = False
+            while not signed:
+                random_num = 0
+                while math.gcd(random_num, p - 1) > 1:
+                    random_num = secrets.randbelow(p - 1)
+
+                x1, y1 = curve.scalar_multiplication(random_num, generator_point)
+                r = x1 % p
+                s = pow(random_num, -1, p) * (int(transaction_hash, 16) + r * k) % p
+                if r != 0 and s != 0:
+                    signed = True
+            return (hex(r), hex(s))

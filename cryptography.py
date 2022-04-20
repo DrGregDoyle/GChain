@@ -244,7 +244,7 @@ def generate_ecc_keys(bits=256, generator=None, prime=None, a=0, b=7, private_ke
     (x, y) = public_point
     (gx, gy) = g
 
-    public_key = [(hex(x), hex(y)), (hex(gx), hex(gy)), hex(p)]
+    public_key = [(hex(x), hex(y)), (hex(gx), hex(gy)), hex(p)]  # [(public key point), (generator point), prime)]
     private_key = hex(k)
 
     return public_key, private_key

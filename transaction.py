@@ -21,6 +21,7 @@ var     | var       | var           | All outputs
 from utxo import UTXO, OUTPUT_UTXO, decode_raw_output, decode_raw_utxo
 from hashlib import sha256
 import secrets
+from script_engine import ScriptEngine
 
 
 class Transaction:
