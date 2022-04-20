@@ -1,11 +1,15 @@
 '''
-Methods for RSA, discrete log and elliptic curves
+Methods for ECC cryptography
 '''
 
 '''Imports'''
-import math
 import primefac
 import secrets
+
+'''Constants'''
+BITCOIN_PRIME = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
+BITCOIN_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
+                     0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
 
 '''Mathematical Methods'''
 
@@ -23,31 +27,6 @@ def generate_nbit_prime(n: int):
         if num < 2:
             num = secrets.randbits(bits)
     return num
-
-
-def find_generator(p: int):
-    '''
-    Given a prime p, we return a generator g
-    '''
-    g = secrets.randbelow(p - 1)
-    while not is_generator(g, p):
-        g += 1
-        if g >= p - 1:
-            g = secrets.randbelow(p - 1)
-    return g
-
-
-def is_generator(g: int, p: int) -> bool:
-    '''
-    If <g> = Z_p^* return True.
-    If d | (p-1) and g^d != 1 (mod p) for all divisors d, then g is a generator
-    '''
-
-    divisor_iterator = primefac.primefac(p - 1)
-    for d in divisor_iterator:
-        if pow(g, d, p) == 1:
-            return False
-    return True
 
 
 def is_quadratic_residue(n: int, p: int) -> bool:
@@ -120,96 +99,7 @@ def tonelli_shanks(n: int, p: int):
     return R
 
 
-'''Cryptographic Keys'''
-'''
-For RSA, we don't have a way of retrieving the public key from the private key.
-Further, we don't have a way to get p and q from n without factoring the number.
-Hence given a random number s, we find the first prime above and below this number,
-    and e will be the greatest number lower than s satisfying (e, phi(n)) = 1
-
-'''
-
-
-def generate_above_below_primes(midpoint: int):
-    '''
-    We generate RSA keys by taking p and q to be the first primes above and below the midpoint
-    '''
-
-    above_prime = midpoint
-    below_prime = midpoint - 1
-    m_a = midpoint
-    m_b = midpoint - 1
-
-    '''Prime above'''
-    while not primefac.isprime(above_prime):
-        m_a += 1
-        above_prime = m_a
-
-    '''Prime below'''
-    while not primefac.isprime(below_prime):
-        m_b -= 1
-        below_prime = m_b
-
-    return above_prime, below_prime
-
-
-def generate_rsa_keys(bits=256, seed=None):
-    '''
-    We generate public and private keys using rsa method
-    '''
-
-    if seed is None:
-        seed = secrets.randbits(bits)
-    else:
-        seed = seed
-
-    p, q = generate_above_below_primes(seed)
-
-    assert primefac.isprime(p)
-    assert primefac.isprime(q)
-
-    n = p * q
-    phi_n = (p - 1) * (q - 1)
-
-    e = seed
-    while math.gcd(e, phi_n) > 1:
-        e -= 1
-    d = pow(e, -1, phi_n)
-
-    assert math.gcd(e, phi_n) == 1
-    assert e * d % phi_n == 1
-
-    public_key = [hex(e), hex(n)]
-    private_key = hex(d)
-    return public_key, private_key
-
-
-def generate_dl_keys(bits=256, generator=None, prime=None, private_key=None):
-    '''
-    We generate discrete log public and private keys
-    '''
-
-    if prime is None:
-        p = generate_nbit_prime(bits)
-    else:
-        p = prime
-
-    if generator is None:
-        g = find_generator(p)
-    else:
-        g = generator
-
-    assert is_generator(g, p)
-
-    '''We can use a submitted private key or generate a new one'''
-    if private_key is None:
-        K = secrets.randbelow(p - 1)
-    else:
-        K = private_key
-    k = pow(g, K, p)
-    public_key = [hex(k), hex(g), hex(p)]
-    private_key = hex(K)
-    return public_key, private_key
+'''ECC Keys'''
 
 
 def generate_ecc_keys(bits=256, generator=None, prime=None, a=0, b=7, private_key=None):
@@ -232,6 +122,9 @@ def generate_ecc_keys(bits=256, generator=None, prime=None, a=0, b=7, private_ke
         g = curve.find_integer_point()  # All integer points are generators
     else:
         g = generator
+
+    '''Verify order of generator'''
+    assert curve.scalar_multiplication(p, g) is None
 
     '''Choose private_key or use submitted value'''
     if private_key is None:
@@ -354,6 +247,18 @@ class EllipticCurve:
         x, y = point
         return (x * x * x - y * y + self.a * x + self.b) % self.p == 0
 
+    def find_inverse(self, point: tuple):
+        '''
+        We return the additive inverse point inv_point such that point + inv_point = point at infinity
+        '''
+        if point is None:
+            return None
+
+        x, y = point
+        if y == 0:
+            return point
+        return (x, -y % self.p)
+
     def add_points(self, point1: tuple, point2: tuple):
         '''
         Adding points using the elliptic curve addition rules.
@@ -371,20 +276,21 @@ class EllipticCurve:
         x1, y1 = point1
         x2, y2 = point2
 
-        '''Point of infinity addition'''
-        if x1 == x2 and y1 != y2:
-            return None
-
         '''Addition rules'''
-        if x1 == x2:  # points are equal
-            m = (3 * x1 * x1 + self.a) * pow(2 * y1, -1, self.p)
-        else:  # points are distinct
-            m = (y1 - y2) * pow(x1 - x2, -1, self.p)
+        if x1 == x2:
+            if y1 != y2:  # Points are inverses
+                return None
+            elif y1 == 0:  # Point is its own inverse when lying on the x axis
+                return None
+            else:  # Points are the same
+                m = ((3 * x1 * x1 + self.a) * pow(2 * y1, -1, self.p)) % self.p
+        else:  # Points are distinct
+            m = ((y2 - y1) * pow(x2 - x1, -1, self.p)) % self.p
 
-        x3 = m * m - x1 - x2
-        y3 = y1 + m * (x3 - x1)
+        x3 = (m * m - x1 - x2) % self.p
+        y3 = (m * (x1 - x3) - y1) % self.p
 
-        point = (x3 % self.p, y3 % self.p)
+        point = (x3, y3)
         '''Verify result'''
         assert self.is_on_curve(point)
         return point
@@ -411,11 +317,13 @@ class EllipticCurve:
         '''
 
         '''Point at infinity case'''
-        if point is None or n % self.p == 0:
+        if point is None or n == 0:
             return None
 
-        '''Reduce n to handle negative vals'''
-        n = n % self.p
+        '''Negative value implies multiplying the scalar by the inverse of the point'''
+        if n < 0:
+            n *= -1
+            point = self.find_inverse(point)
 
         '''Proceed with algorithm'''
         bitstring = bin(n)[2:]
