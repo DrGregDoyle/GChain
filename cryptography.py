@@ -1,5 +1,7 @@
 '''
 Methods for ECC cryptography
+
+TODO: Implement Schoof's algorithm to find an appropriate generator
 '''
 
 '''Imports'''
@@ -118,13 +120,14 @@ def generate_ecc_keys(bits=256, generator=None, prime=None, a=0, b=7, private_ke
     curve = EllipticCurve(a, b, p)
 
     '''Get a generator'''
+    '''
+    NOTE: Not all points on an elliptic curves are generators. We will need to search for points of large order.
+    '''
+
     if generator is None:
-        g = curve.find_integer_point()  # All integer points are generators
+        g = curve.find_integer_point()
     else:
         g = generator
-
-    '''Verify order of generator'''
-    assert curve.scalar_multiplication(p, g) is None
 
     '''Choose private_key or use submitted value'''
     if private_key is None:

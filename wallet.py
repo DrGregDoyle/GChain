@@ -9,7 +9,7 @@ import pandas as pd
 import secrets
 import math
 from hashlib import sha256, sha512
-from cryptography import generate_ecc_keys, generate_dl_keys, generate_rsa_keys, EllipticCurve
+from cryptography import generate_ecc_keys, EllipticCurve
 
 '''Wallet Class'''
 
@@ -26,7 +26,7 @@ class Wallet:
     BITCOIN_ECC_X = 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798
     BITCOIN_ECC_Y = 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8
 
-    def __init__(self, bits=128, checksum_bits=4, seed=None, use_ecc=True, use_dl=False, use_rsa=False):
+    def __init__(self, bits=128, checksum_bits=4, seed=None):
         '''
         We create a deterministic wallet where the seed will be expressed as dictionary words.
         We follow common practice by first generating a random_number, hashing the number and using as checksum,
@@ -34,13 +34,6 @@ class Wallet:
             NB: We 2048 words in the dictionary as 2^11 = 2048.
 
         '''
-        '''Indicate encryption method'''
-        if not use_ecc and not use_rsa:
-            self.encryption_type = 'dl'
-        elif not use_ecc and not use_dl:
-            self.encryption_type = 'rsa'
-        else:
-            self.encryption_type = 'ecc'
 
         '''Automatically adjust bitlength and checksum if out of bounds'''
         if bits < pow(2, self.MIN_EXP):
@@ -83,6 +76,7 @@ class Wallet:
         '''
         Will generate a seed phrase - default is 128 bit entropy w 4 bits as checksum.
             For other bitsizes, the bitlength of entropy + checksum must be divisible by 11
+            (Why? 2^11 = 2048, the number of words in the dict.)
         '''
 
         '''Create index string = entropy + checksum'''
@@ -142,50 +136,32 @@ class Wallet:
         master_chain_string = binary_string_512[256:]
 
         private_key = int(private_key_string, 2)
-        chain_code = int(master_chain_string, 2)
+        chain_code = int(master_chain_string, 2)  # Chain code unused for now
 
-        # print(f'Private key int: {private_key}')
-        # print(f'Chain code int: {chain_code}')
-
-        if self.encryption_type == 'rsa':
-            pub, priv = generate_rsa_keys(bits=self.bits, seed=private_key)
-            return [pub, priv]
-        elif self.encryption_type == 'dl':
-            pub, priv = generate_dl_keys(bits=self.bits, generator=self.BITCOIN_ECC_X, prime=self.BITCOIN_PRIME,
-                                         private_key=private_key)
-            return [pub, priv]
-        else:
-            pub, priv = generate_ecc_keys(bits=self.bits, generator=self.BITCOIN_ECC_GENERATOR,
-                                          prime=self.BITCOIN_PRIME,
-                                          private_key=private_key)
-            return [pub, priv]
+        pub, priv = generate_ecc_keys(bits=self.bits, generator=self.BITCOIN_ECC_GENERATOR,
+                                      prime=self.BITCOIN_PRIME,
+                                      private_key=private_key)
+        return [pub, priv]
 
     def sign_transaction(self, transaction_hash: str):
 
-        if self.encryption_type == 'dl':
-            # sign_transaction_dl
-            pass
-        elif self.encryption_type == 'rsa':
-            # sign_transaction_rsa
-            pass
-        else:
-            pub, priv = self.master_keys
-            (h_x, h_y), (h_gx, h_gy), h_p = pub
-            h_k = priv
-            p = int(h_p, 16)
-            generator_point = (int(h_gx, 16) % p, int(h_gy, 16) % p)
-            curve = EllipticCurve(a=0, b=7, p=p)
-            k = int(h_k, 16)
+        pub, priv = self.master_keys
+        (h_x, h_y), (h_gx, h_gy), h_p = pub
+        h_k = priv
+        p = int(h_p, 16)
+        generator_point = (int(h_gx, 16) % p, int(h_gy, 16) % p)
+        curve = EllipticCurve(a=0, b=7, p=p)
+        k = int(h_k, 16)
 
-            signed = False
-            while not signed:
-                random_num = 0
-                while math.gcd(random_num, p - 1) > 1:
-                    random_num = secrets.randbelow(p - 1)
+        signed = False
+        while not signed:
+            random_num = 0
+            while math.gcd(random_num, p - 1) > 1:
+                random_num = secrets.randbelow(p - 1)
 
-                x1, y1 = curve.scalar_multiplication(random_num, generator_point)
-                r = x1 % p
-                s = pow(random_num, -1, p) * (int(transaction_hash, 16) + r * k) % p
-                if r != 0 and s != 0:
-                    signed = True
-            return (hex(r), hex(s))
+            x1, y1 = curve.scalar_multiplication(random_num, generator_point)
+            r = x1 % p
+            s = pow(random_num, -1, p) * (int(transaction_hash, 16) + r * k) % p
+            if r != 0 and s != 0:
+                signed = True
+        return (hex(r), hex(s))
