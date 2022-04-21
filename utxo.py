@@ -88,9 +88,6 @@ class OUTPUT_UTXO:
     def get_hex_chars(self):
         return len(self.get_raw_output())
 
-    def unlock_funds(self):
-        pass
-
 
 '''
 Unpack
