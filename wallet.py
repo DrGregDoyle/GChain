@@ -19,12 +19,12 @@ class Wallet:
     MIN_EXP = 7
     DICT_EXP = 11
     BITCOIN_PRIME = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
+
     # Note that values below are int types not strings
-    BITCOIN_ECC_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
-                             0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
     # Both x and y are generators for Z_p^* for p = the bitcoin prime
     BITCOIN_ECC_X = 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798
     BITCOIN_ECC_Y = 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8
+    BITCOIN_ECC_GENERATOR = (BITCOIN_ECC_X, BITCOIN_ECC_Y)
 
     def __init__(self, bits=128, checksum_bits=4, seed=None):
         '''
@@ -32,11 +32,10 @@ class Wallet:
         We follow common practice by first generating a random_number, hashing the number and using as checksum,
             then dividing the random_number + checksum into 11-bit chunks and using these chunks as index in the dictionary
             NB: We 2048 words in the dictionary as 2^11 = 2048.
-
         '''
 
         '''Automatically adjust bitlength and checksum if out of bounds'''
-        if bits < pow(2, self.MIN_EXP):
+        if bits < pow(2, self.MIN_EXP):  # Min is 128 bits
             bits = pow(2, self.MIN_EXP)
         if (bits + checksum_bits) % self.DICT_EXP != 0:
             checksum_bits = -bits % self.DICT_EXP
@@ -87,8 +86,8 @@ class Wallet:
 
         '''Find indices'''
         index_list = []
-        for x in range(0, len(index_string) // 11):
-            indice = index_string[x * 11: (x + 1) * 11]
+        for x in range(0, len(index_string) // self.DICT_EXP):
+            indice = index_string[x * self.DICT_EXP: (x + 1) * self.DICT_EXP]
             index_list.append(int(indice, 2))
 
         '''Load dictionary'''
