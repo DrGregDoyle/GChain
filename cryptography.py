@@ -1,7 +1,14 @@
 '''
 Methods for ECC cryptography
 
-TODO: Implement Schoof's algorithm to find an appropriate generator
+
+TODO: Implement Schoof's algorithm
+    -Schoof's algorithm will yield the group order of the elliptic curve E given by
+        y^2 = x^3 + ax + b
+    over F_p. In this fashion, we can dynamically generate p of fixed bit length, and then
+    use Schoof's algorithm to find a generator.
+    -Until then, we dynamically find a generator only for small primes.
+    -We fix our large prime to be the bitcoin prime and the generator similarly
 '''
 
 '''Imports'''
@@ -9,9 +16,6 @@ import primefac
 import secrets
 
 '''Constants'''
-BITCOIN_PRIME = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
-BITCOIN_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
-                     0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
 
 '''Mathematical Methods'''
 
@@ -41,6 +45,19 @@ def is_quadratic_residue(n: int, p: int) -> bool:
     if n % p == 0:
         return True
     return pow(n, (p - 1) // 2, p) == 1
+
+
+def legendre_symbol(n: int, p: int) -> int:
+    '''
+    Returns 0 if p | n, 1 if n is a qr mod p and -1 if not.
+    '''
+    if n % p == 0:
+        return 0
+    qr = is_quadratic_residue(n, p)
+    if qr:
+        return 1
+    else:
+        return -1
 
 
 def tonelli_shanks(n: int, p: int):
@@ -101,57 +118,19 @@ def tonelli_shanks(n: int, p: int):
     return R
 
 
-'''ECC Keys'''
-
-
-def generate_ecc_keys(bits=256, generator=None, prime=None, a=0, b=7, private_key=None):
-    '''
-    We use the Secp256k1 curve y^2 = x^3 + 7
-    We will generate a random generator and prime of 256 bits
-    '''
-
-    '''Get the prime'''
-    if prime is None:
-        p = generate_nbit_prime(bits)
-    else:
-        p = prime
-
-    '''Create the curve'''
-    curve = EllipticCurve(a, b, p)
-
-    '''Get a generator'''
-    '''
-    NOTE: Not all points on an elliptic curves are generators. We will need to search for points of large order.
-    '''
-
-    if generator is None:
-        g = curve.find_integer_point()
-    else:
-        g = generator
-
-    '''Choose private_key or use submitted value'''
-    if private_key is None:
-        k = secrets.randbelow(p - 1)
-    else:
-        k = private_key
-
-    '''Public key = kg'''
-    public_point = curve.scalar_multiplication(k, g)
-    (x, y) = public_point
-    (gx, gy) = g
-
-    public_key = [(hex(x), hex(y)), (hex(gx), hex(gy)), hex(p)]  # [(public key point), (generator point), prime)]
-    private_key = hex(k)
-
-    return public_key, private_key
-
-
 '''Elliptic Curve class'''
 
 
 class EllipticCurve:
+    '''
+    We use the fixed Bitcoin values for 'real-world' testing.
+    '''
+    BITCOIN_PRIME = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
+    BITCOIN_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
+                         0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
+    BITCOIN_GROUPORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
 
-    def __init__(self, a: int, b: int, p: int):
+    def __init__(self, a=None, b=None, p=None):
         '''
         We instantiate an elliptic curve of the form
 
@@ -165,9 +144,27 @@ class EllipticCurve:
         then y1 + y2 = 0 (mod p) and (x1,y1) + (x2,y2) = point at infinity, over Z_p
 
         '''
-        self.a = a  # Linear coefficient
-        self.b = b  # Scalar coefficient
-        self.p = p  # Prime characteristic
+        # Linear coefficient
+        if a is None:
+            self.a = 0
+        else:
+            self.a = a
+
+        # Scalar coefficient
+        if b is None:
+            self.b = 7
+        else:
+            self.b = b
+
+        # Field prime
+        if p is None:
+            self.p = self.BITCOIN_PRIME
+            self.order = self.BITCOIN_GROUPORDER
+            self.generator = self.BITCOIN_GENERATOR
+        else:
+            self.p = p
+            self.order = self.find_group_order()
+            self.generator = self.find_generator()
 
     '''
     Properties
@@ -181,9 +178,52 @@ class EllipticCurve:
     def is_nonsingular(self):
         return self.discriminant != 0
 
+    @property
+    def has_prime_order(self):
+        return primefac.isprime(self.order)
+
     '''
     Methods
     '''
+
+    def find_generator(self):
+        '''
+        If the curve has prime order we return a random point.
+        '''
+        if self.has_prime_order:
+            return self.find_integer_point()
+        else:
+            unique_primes = set()
+            divisor_iter = primefac.primefac(self.order)
+            for d in divisor_iter:
+                unique_primes.add(d)
+
+            generator_found = False
+            candidate_point = None
+            while not generator_found:
+                candidate_point = self.find_integer_point()
+                point_list = []
+                for q in unique_primes:
+                    point_list.append(self.scalar_multiplication(self.order // q, candidate_point))
+                if None not in point_list:
+                    generator_found = True
+            return candidate_point
+
+    def find_group_order(self):
+        '''
+        Using the legendre symbol addition formula
+
+        E(F_p) = \sum_{x \in F_p} ( (x^3 + ax + b)/p )
+
+        where the right most term is the Legendre symbol
+        '''
+
+        sum = 0
+        for x in range(0, self.p):
+            val = x ** 3 + self.a * x + self.b
+            sum += legendre_symbol(val, self.p)
+
+        return sum + self.p + 1
 
     def find_integer_point(self):
         '''
@@ -202,23 +242,17 @@ class EllipticCurve:
         assert self.is_on_curve(point)
         return point
 
-    def is_x_on_curve(self, x: int):
+    def find_inverse(self, point: tuple):
         '''
-        If the value x^3 + ax + b (mod p) is a quadratic residue,
-            then there exists some y in Z_p such that y^2 = x^3 + ax + b.
-        Hence we return true if this value is a QR and false otherwise.
-
-        We use Euler's criterion: For an odd prime p, n is a quadratic residue iff n^(p-1)/2 = 1 (mod p).
+        We return the additive inverse point inv_point such that point + inv_point = point at infinity
         '''
+        if point is None:
+            return None
 
-        val = (x * x * x + self.a * x + self.b) % self.p
-
-        '''Trivial Case'''
-        if val % self.p == 0:
-            return True
-
-        '''General Case'''
-        return pow(val, (self.p - 1) // 2, self.p) == 1
+        x, y = point
+        if y == 0:
+            return point
+        return (x, -y % self.p)
 
     def find_y_from_x(self, x: int):
         '''
@@ -250,17 +284,25 @@ class EllipticCurve:
         x, y = point
         return (x * x * x - y * y + self.a * x + self.b) % self.p == 0
 
-    def find_inverse(self, point: tuple):
+    def is_x_on_curve(self, x: int):
         '''
-        We return the additive inverse point inv_point such that point + inv_point = point at infinity
-        '''
-        if point is None:
-            return None
+        If the value x^3 + ax + b (mod p) is a quadratic residue,
+            then there exists some y in Z_p such that y^2 = x^3 + ax + b.
+        Hence we return true if this value is a QR and false otherwise.
 
-        x, y = point
-        if y == 0:
-            return point
-        return (x, -y % self.p)
+        We use Euler's criterion: For an odd prime p, n is a quadratic residue iff n^(p-1)/2 = 1 (mod p).
+        '''
+
+        val = (x * x * x + self.a * x + self.b) % self.p
+
+        '''Trivial Case'''
+        if val % self.p == 0:
+            return True
+
+        '''General Case'''
+        return pow(val, (self.p - 1) // 2, self.p) == 1
+
+    '''Adding and Scalar Multiplication'''
 
     def add_points(self, point1: tuple, point2: tuple):
         '''
@@ -341,3 +383,23 @@ class EllipticCurve:
         '''Verify results'''
         assert self.is_on_curve(temp_point)
         return temp_point
+
+    '''Public and Private Keys'''
+
+    def generate_keys(self):
+        '''
+        We generate a random number then return it and the corresponding public key.
+        The random number size will be based on the bit length of the field prime
+        '''
+        private_key = 0
+        bits = self.p.bit_length()
+        while private_key.bit_length() != bits:
+            private_key = secrets.randbits(bits)
+        public_key = self.generate_public_key(private_key)
+        return public_key, private_key
+
+    def generate_public_key(self, private_key: int):
+        val = self.scalar_multiplication(private_key, self.generator)
+        if val is None:
+            print("NONE!")
+        return val
