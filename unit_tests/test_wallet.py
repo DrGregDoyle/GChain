@@ -1,27 +1,14 @@
 '''
 Unit tests for the wallet class
+'''
 
-TODO: Implement m / purpose / coin_type / account / change / address_index method for multiple cointypes
-
-
+'''
+Imports
 '''
 import secrets
-import primefac
 import numpy as np
 from wallet import Wallet
-from cryptography import EllipticCurve
-
-'''
-Test Vars
-'''
-
-BITCOIN_PRIME = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
-BITCOIN_ECC_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
-                         0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
-
-# Both x and y are generators for Z_p^* for p = the bitcoin prime
-BITCOIN_ECC_X = 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798
-BITCOIN_ECC_Y = 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8
+from hashlib import sha256
 
 '''
 Tests
@@ -90,3 +77,13 @@ def test_keys():
     int_pub = (x, y)
     int_priv = int(hex_priv, 16)
     assert w.curve.scalar_multiplication(int_priv, w.curve.generator) == int_pub
+
+
+def test_signature():
+    w = Wallet()
+    tx_hash1 = sha256('tx_hash'.encode()).hexdigest()
+    tx_hash2 = sha256('bad_hash'.encode()).hexdigest()
+
+    sig = w.sign_transaction(tx_hash1)
+    assert w.verify_signature(sig, tx_hash1)
+    assert not w.verify_signature(sig, tx_hash2)

@@ -1,7 +1,6 @@
 '''
 The Wallet class
 
-#TODO: Add Signature generation
 '''
 
 '''Imports'''
@@ -134,3 +133,87 @@ class Wallet:
         public_key = (hex(x), hex(y))
         private_key = hex(pk_int)
         return public_key, private_key
+
+    def sign_transaction(self, tx_hash: str):
+        '''
+        Explanation here
+        '''
+        if not self.curve.has_prime_order:  # Signature algorithm only works for curves w prime order group
+            return -1
+        else:
+            n = self.curve.order
+
+        # Get private key
+        _, priv_hex = self.master_keys
+        private_key = int(priv_hex, 16)
+
+        # Find bitlength of tx_hash
+        hash_binary_string = bin(int(tx_hash, 16))
+        while len(hash_binary_string) > self.curve.order.bit_length():
+            hash_binary_string = hash_binary_string[:-1]  # lop off bits on the right
+        z = int(hash_binary_string, 2)
+
+        # Loop until valid signature found
+        signed = False
+        while not signed:
+            # Select cryptographically secure random integer k from [1,n-1]
+            k = 0
+            while math.gcd(k, n) > 1:
+                k = secrets.randbelow(n)
+
+            # Calculate k * G
+            curve_point = self.curve.scalar_multiplication(k, self.curve.generator)
+            x1, y1 = curve_point
+            r = x1 % n
+            s = (pow(k, -1, n) * (z + r * private_key)) % n
+
+            # Repeat loop if one of r, s equals zero
+            if r != 0 and s != 0:
+                signed = self.verify_signature((r, s), tx_hash)
+        return (hex(r), hex(s))
+
+    def verify_signature(self, signature: tuple, tx_hash: str) -> bool:
+        '''
+        Verifies a given signature and tx_hash against the public key of the wallet.
+
+        Signature will be passed in as an int tuple
+        '''
+        if not self.curve.has_prime_order:  # Signature algorithm only works for curves w prime order group
+            return False
+        else:
+            n = self.curve.order
+
+        # Get public key
+        pub_hex, _ = self.master_keys
+        hx, hy = pub_hex
+        x = int(hx, 16)
+        y = int(hy, 16)
+        public_key = (x, y)
+
+        # Get signature and s^-1
+        r, s = signature
+        if type(r) == str:
+            r = int(r, 16)
+        if type(s) == str:
+            s = int(s, 16)
+        s_inv = pow(s, -1, n)
+
+        # Find bitlength of tx_hash
+        hash_binary_string = bin(int(tx_hash, 16))
+        while len(hash_binary_string) > self.curve.order.bit_length():
+            hash_binary_string = hash_binary_string[:-1]  # lop off bits on the right
+        z = int(hash_binary_string, 2)
+
+        # Get coefficients
+        u1 = (z * s_inv) % n
+        u2 = (r * s_inv) % n
+
+        point = self.curve.add_points(self.curve.scalar_multiplication(u1, self.curve.generator),
+                                      self.curve.scalar_multiplication(u2, public_key))
+
+        # Return True/False
+        if point is None:
+            return False
+
+        (x1, _) = point
+        return r == x1 % n
