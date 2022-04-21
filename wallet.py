@@ -1,15 +1,15 @@
 '''
 The Wallet class
 
-
+#TODO: Add Signature generation
 '''
-import pandas as pd
 
 '''Imports'''
+import pandas as pd
 import secrets
 import math
 from hashlib import sha256, sha512
-from cryptography import generate_ecc_keys, EllipticCurve
+from cryptography import EllipticCurve
 
 '''Wallet Class'''
 
@@ -18,21 +18,15 @@ class Wallet:
     '''Formatting Variables'''
     MIN_EXP = 7
     DICT_EXP = 11
-    BITCOIN_PRIME = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
 
-    # Note that values below are int types not strings
-    # Both x and y are generators for Z_p^* for p = the bitcoin prime
-    BITCOIN_ECC_X = 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798
-    BITCOIN_ECC_Y = 0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8
-    BITCOIN_ECC_GENERATOR = (BITCOIN_ECC_X, BITCOIN_ECC_Y)
+    def __init__(self, bits=128, checksum_bits=4, seed=None, a=None, b=None, p=None):
+        '''
+        The bits and checksum_bits values are used to generate the seed.
+        The curve parameters a,b and p are None by default, which means we use the BITCOIN standard values.
+        '''
 
-    def __init__(self, bits=128, checksum_bits=4, seed=None):
-        '''
-        We create a deterministic wallet where the seed will be expressed as dictionary words.
-        We follow common practice by first generating a random_number, hashing the number and using as checksum,
-            then dividing the random_number + checksum into 11-bit chunks and using these chunks as index in the dictionary
-            NB: We 2048 words in the dictionary as 2^11 = 2048.
-        '''
+        '''Create the Elliptic curve'''
+        self.curve = EllipticCurve(a, b, p)
 
         '''Automatically adjust bitlength and checksum if out of bounds'''
         if bits < pow(2, self.MIN_EXP):  # Min is 128 bits
@@ -68,14 +62,13 @@ class Wallet:
         seed = 0
         while seed.bit_length() != self.bits:
             seed = secrets.randbits(self.bits)
-
         return seed
 
     def get_seed_phrase(self, seed: int) -> list:
         '''
         Will generate a seed phrase - default is 128 bit entropy w 4 bits as checksum.
-            For other bitsizes, the bitlength of entropy + checksum must be divisible by 11
-            (Why? 2^11 = 2048, the number of words in the dict.)
+            For other bitsizes, the bitlength of entropy + checksum must be divisible by 11 = DICT_EXP
+            (Why? 2^11 = 2048, the number of words in the dict. If we change the dictionary, we update DICT_EXP.)
         '''
 
         '''Create index string = entropy + checksum'''
@@ -91,7 +84,7 @@ class Wallet:
             index_list.append(int(indice, 2))
 
         '''Load dictionary'''
-        df_dict = pd.read_csv('./english_dictionary.txt', header=None)
+        df_dict = pd.read_csv('./english_dictionary.txt', header=None)  # TODO: Pull a dictionary from a web api
 
         '''Find indexed words and save to list'''
         word_list = []
@@ -134,33 +127,10 @@ class Wallet:
         private_key_string = binary_string_512[0:256]
         master_chain_string = binary_string_512[256:]
 
-        private_key = int(private_key_string, 2)
-        chain_code = int(master_chain_string, 2)  # Chain code unused for now
+        pk_int = int(private_key_string, 2) % self.curve.p
+        cc = int(master_chain_string, 2)  # Chain code unused for now
 
-        pub, priv = generate_ecc_keys(bits=self.bits, generator=self.BITCOIN_ECC_GENERATOR,
-                                      prime=self.BITCOIN_PRIME,
-                                      private_key=private_key)
-        return [pub, priv]
-
-    def sign_transaction(self, transaction_hash: str):
-
-        pub, priv = self.master_keys
-        (h_x, h_y), (h_gx, h_gy), h_p = pub
-        h_k = priv
-        p = int(h_p, 16)
-        generator_point = (int(h_gx, 16) % p, int(h_gy, 16) % p)
-        curve = EllipticCurve(a=0, b=7, p=p)
-        k = int(h_k, 16)
-
-        signed = False
-        while not signed:
-            random_num = 0
-            while math.gcd(random_num, p - 1) > 1:
-                random_num = secrets.randbelow(p - 1)
-
-            x1, y1 = curve.scalar_multiplication(random_num, generator_point)
-            r = x1 % p
-            s = pow(random_num, -1, p) * (int(transaction_hash, 16) + r * k) % p
-            if r != 0 and s != 0:
-                signed = True
-        return (hex(r), hex(s))
+        (x, y) = self.curve.generate_public_key(pk_int)
+        public_key = (hex(x), hex(y))
+        private_key = hex(pk_int)
+        return public_key, private_key

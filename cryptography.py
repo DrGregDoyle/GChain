@@ -130,7 +130,7 @@ class EllipticCurve:
                          0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
     BITCOIN_GROUPORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
 
-    def __init__(self, a=0, b=7, p=None):
+    def __init__(self, a=None, b=None, p=None):
         '''
         We instantiate an elliptic curve of the form
 
@@ -144,8 +144,17 @@ class EllipticCurve:
         then y1 + y2 = 0 (mod p) and (x1,y1) + (x2,y2) = point at infinity, over Z_p
 
         '''
-        self.a = a  # Linear coefficient
-        self.b = b  # Scalar coefficient
+        # Linear coefficient
+        if a is None:
+            self.a = 0
+        else:
+            self.a = a
+
+        # Scalar coefficient
+        if b is None:
+            self.b = 7
+        else:
+            self.b = b
 
         # Field prime
         if p is None:
@@ -390,4 +399,7 @@ class EllipticCurve:
         return public_key, private_key
 
     def generate_public_key(self, private_key: int):
-        return self.scalar_multiplication(private_key, self.generator)
+        val = self.scalar_multiplication(private_key, self.generator)
+        if val is None:
+            print("NONE!")
+        return val

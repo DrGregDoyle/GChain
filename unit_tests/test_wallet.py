@@ -82,28 +82,11 @@ def test_entropy_checksum_mod11():
     assert w6.checksum_bits == 11
 
 
-def test_ecc_keys():
-    '''
-    We verify that we retrieve the correct prime and generator
-    We verify that the private key corresponds to public key through elliptic discrete log
-    '''
-    wallet_ecc = Wallet()
-
-    [(s_x, s_y), (s_gx, s_gy), s_p], s_k = wallet_ecc.master_keys
-
-    (x, y) = (int(s_x, 16), int(s_y, 16))
-    (gx, gy) = (int(s_gx, 16), int(s_gy, 16))
-    p = int(s_p, 16)
-    k = int(s_k, 16)
-
-    assert p == BITCOIN_PRIME
-    assert (gx, gy) == BITCOIN_ECC_GENERATOR
-
-    curve = EllipticCurve(a=0, b=7, p=BITCOIN_PRIME)
-    point = curve.scalar_multiplication(k, BITCOIN_ECC_GENERATOR)
-
-    assert point == (x, y)
-
-    seed_ecc = wallet_ecc.recover_seed(wallet_ecc.seed_phrase)
-    wallet2_ecc = Wallet(seed=seed_ecc)
-    assert wallet2_ecc.master_keys == wallet_ecc.master_keys
+def test_keys():
+    w = Wallet()
+    (hx, hy), hex_priv = w.master_keys
+    x = int(hx, 16)
+    y = int(hy, 16)
+    int_pub = (x, y)
+    int_priv = int(hex_priv, 16)
+    assert w.curve.scalar_multiplication(int_priv, w.curve.generator) == int_pub
