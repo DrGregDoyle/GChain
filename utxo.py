@@ -12,8 +12,8 @@ Bit size    | Byte Size     | hex characters        | field
 ===========================================================
 256         | 32            | 64                   | tx_id
 32          | 4             | 8                    | tx_index
-64          | 8             | 16                    | script_length
-var         | var           | var                   | signature_script
+64          | 8             | 16                   | script_length
+var         | var           | var                  | signature_script
 32          | 4             | 8                    | sequence
 
 
@@ -26,14 +26,11 @@ The way the variable length integer works is:
     If that first byte is 253, read the next two bytes as a little endian 16-bit number (total bytes read = 3)
     If that first byte is 254, read the next four bytes as a little endian 32-bit number (total bytes read = 5)
     If that first byte is 255, read the next eight bytes as a little endian 64-bit number (total bytes read = 9)
-
-
-
 '''
-import secrets
 
 '''Imports'''
 from hashlib import sha256
+import secrets
 
 
 class UTXO:
@@ -63,6 +60,9 @@ class UTXO:
 
     def get_hex_chars(self):
         return len(self.get_raw_utxo())
+
+    def consume_output(self):
+        pass
 
 
 class OUTPUT_UTXO:
