@@ -2,8 +2,14 @@
 The Wallet class
 
 -The wallet will generate ECC keys upon instantiation.
--An address can be given by a base-64 (or base-58) representation of the hashed public key x-value
--(Except that both (x,y) and (x,p-y) will be valid points on the curve.
+-The address will be related to the locking/unlocking script used in the utxos
+
+###NOTE ON RIPEMD
+    -The ripemd only seems to work through the update function
+    -This means for a proper hash, we need to generate a new ripemd160 hash object each time
+
+
+#TODO: Allow for dynamically generated addresses from the master keys
 
 
 '''
@@ -12,6 +18,7 @@ The Wallet class
 import pandas as pd
 import secrets
 import math
+import hashlib
 from hashlib import sha256, sha512
 from cryptography import EllipticCurve
 
@@ -30,7 +37,8 @@ class Wallet:
                    'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
                    'w', 'x', 'y', 'z']
 
-    def __init__(self, bits=128, checksum_bits=4, seed=None, a=None, b=None, p=None):
+    def __init__(self, bits=128, seed_checksum_bits=4, address_checksum_bits=32, version=0, seed=None, a=None, b=None,
+                 p=None):
         '''
         The bits and checksum_bits values are used to generate the seed.
         The curve parameters a,b and p are None by default, which means we use the BITCOIN standard values.
@@ -42,13 +50,13 @@ class Wallet:
         '''Automatically adjust bitlength and checksum if out of bounds'''
         if bits < pow(2, self.MIN_EXP):  # Min is 128 bits
             bits = pow(2, self.MIN_EXP)
-        if (bits + checksum_bits) % self.DICT_EXP != 0:
-            checksum_bits = -bits % self.DICT_EXP
-        if checksum_bits == 0:
-            checksum_bits = self.DICT_EXP
+        if (bits + seed_checksum_bits) % self.DICT_EXP != 0:
+            seed_checksum_bits = -bits % self.DICT_EXP
+        if seed_checksum_bits == 0:
+            seed_checksum_bits = self.DICT_EXP
 
         self.bits = bits
-        self.checksum_bits = checksum_bits
+        self.seed_checksum_bits = seed_checksum_bits
 
         '''Either create a new seed or recover old wallet'''
         if seed is None:
@@ -60,7 +68,7 @@ class Wallet:
         '''Only way to recover the seed after instantiation is from seed phrase'''
         self.master_keys = self.generate_master_keys(seed)
         self.seed_phrase = self.get_seed_phrase(seed)  # Saving seed_phrase is only for testing.
-        self.address = self.get_address()
+        self.address = self.get_address(version, address_checksum_bits)
 
     def get_seed(self):
         '''
@@ -86,7 +94,7 @@ class Wallet:
         '''Create index string = entropy + checksum'''
         entropy = bin(seed)[2:2 + self.bits]
         checksum_hash = sha256(entropy.encode()).hexdigest()
-        check_sum = bin(int(checksum_hash, 16))[2: 2 + self.checksum_bits]
+        check_sum = bin(int(checksum_hash, 16))[2: 2 + self.seed_checksum_bits]
         index_string = entropy + check_sum
 
         '''Find indices'''
@@ -132,7 +140,6 @@ class Wallet:
         We use the seed to generate a hash value of 512 bits
         We use the first 256bits to generate the keys
         We save the remaining 256bits as the Master Chain Code
-        #TODO: Add a and b as part of public_key
         '''
         seed_hash512 = sha512(str(seed).encode()).hexdigest()
         binary_string_512 = bin(int(seed_hash512, 16))[2:]
@@ -143,22 +150,49 @@ class Wallet:
         cc = int(master_chain_string, 2)  # Chain code unused for now
 
         (x, y) = self.curve.generate_public_key(pk_int)
-        public_key = (hex(x), hex(y))
-        private_key = hex(pk_int)
-        return public_key, private_key
+        return (hex(x), hex(y)), hex(pk_int)
 
-    def get_address(self):
-        pub, _ = self.master_keys
-        hx, hy = pub
+    def get_address(self, version: int, checksum_bits: int, prefix_bits=8):
+        '''
+        Address method here:
+        '''
+        # Get public key as int
+        (hx, hy), _ = self.master_keys
         x = int(hx, 16)
         y = int(hy, 16)
-        compressed_string = self.curve.compress_public_key((x, y))
-        return self.int_to_base58(int(compressed_string, 16))
 
-    def recover_publickey_from_address(self, address: str):
-        compressed_string = '0' + hex(self.base58_to_int(address))[2:]
-        (x, y) = self.curve.decompress_public_key(compressed_string)
-        return (hex(x), hex(y))
+        # Compress public key to hex string
+        c_pubkey = self.curve.compress_public_key((x, y))
+
+        ##Hash twice##
+        # Sha256 first
+        pub_hash1 = sha256(c_pubkey.encode()).hexdigest()
+
+        # Ripemd160
+        ripemd160 = hashlib.new('ripemd160')
+        ripemd160.update(pub_hash1.encode())
+        hashed_cpubkey = ripemd160.hexdigest()
+
+        # Prefix
+        prefix = format(version, f'0{prefix_bits // 4}x')  # Make the version have full byte count
+
+        # Checksum
+        versioned_cpubkey = prefix + hashed_cpubkey
+        hash1 = sha256(versioned_cpubkey.encode()).hexdigest()
+        hash2 = sha256(hash1.encode()).hexdigest()
+        checksum = hash2[0:checksum_bits // 4]
+
+        payload = versioned_cpubkey + checksum
+        final_prefix = payload[0:prefix_bits // 4]
+        final_payload = payload[prefix_bits // 4:]
+
+        # Verify address size by # of hex chars. 50 chars = 25 bytes
+        assert len(payload) == 40 + prefix_bits // 4 + checksum_bits // 4
+        assert len(final_prefix) == prefix_bits // 4
+        assert len(final_payload) == 40 + checksum_bits // 4
+
+        # We use int_to_base58 for the prefix - need a mapping function
+        return self.int_to_base58(int(final_prefix, 16)) + self.int_to_base58(int(final_payload, 16))
 
     def sign_transaction(self, tx_hash: str):
         '''
