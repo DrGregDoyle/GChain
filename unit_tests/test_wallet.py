@@ -20,7 +20,7 @@ def test_seed_phrase():
     test_seed_256 = secrets.randbits(256)
 
     wallet_128 = Wallet()
-    wallet_256 = Wallet(bits=256, checksum_bits=8)
+    wallet_256 = Wallet(bits=256, seed_checksum_bits=8)
 
     phrase_128 = wallet_128.get_seed_phrase(test_seed_128)
     seed_128 = wallet_128.recover_seed(phrase_128)
@@ -46,27 +46,27 @@ def test_entropy_checksum_mod11():
 
     # Default case
     assert w1.bits == 128
-    assert w1.checksum_bits == 4
+    assert w1.seed_checksum_bits == 4
 
     # Case where both bits and checksum are correct
     assert w2.bits == 256
-    assert w2.checksum_bits == 8
+    assert w2.seed_checksum_bits == 8
 
     # Case where bits are invalid, checksum is not
     assert w3.bits == 128
-    assert w3.checksum_bits == 4
+    assert w3.seed_checksum_bits == 4
 
     # Case where bits are valid, checksum is not
     assert w4.bits == 128
-    assert w4.checksum_bits == 4
+    assert w4.seed_checksum_bits == 4
 
     # Tests case where bits are random valid number not congruent to 0 (mod 11) yields correct checksum
     assert w5.bits == random_num
-    assert w5.checksum_bits == -random_num % 11
+    assert w5.seed_checksum_bits == -random_num % 11
 
     # Tests case where bits = 0 (mod 11). Want a nonzero checksum_bits
     assert w6.bits == 165
-    assert w6.checksum_bits == 11
+    assert w6.seed_checksum_bits == 11
 
 
 def test_keys():

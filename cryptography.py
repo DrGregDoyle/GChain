@@ -284,7 +284,7 @@ class EllipticCurve:
         x, y = point
         return (x * x * x - y * y + self.a * x + self.b) % self.p == 0
 
-    def is_x_on_curve(self, x: int):
+    def is_x_on_curve(self, x: int) -> bool:
         '''
         If the value x^3 + ax + b (mod p) is a quadratic residue,
             then there exists some y in Z_p such that y^2 = x^3 + ax + b.
@@ -403,3 +403,31 @@ class EllipticCurve:
         if val is None:
             print("NONE!")
         return val
+
+    def compress_public_key(self, point: tuple) -> str:
+        '''
+        Will yield a hex representation of the x point + modulus of y prefix
+        '''
+        x, y = point
+        prefix = ''
+        if y % 2 == 0:
+            prefix = '02'
+        else:
+            prefix = '03'
+        return prefix + hex(x)[2:]
+
+    def decompress_public_key(self, compressed_key: str) -> tuple:
+        '''
+        Will retrieve the public key point on the curve.
+        Compressed_key will be a Hex string
+        '''
+        prefix = int(compressed_key[0:2], 16)
+        x = int(compressed_key[2:], 16)
+        assert self.is_x_on_curve(x)
+        candidate_y = self.find_y_from_x(x)
+        if candidate_y % 2 == prefix % 2:
+            y = candidate_y
+        else:
+            y = self.p - candidate_y
+        assert self.is_on_curve((x, y))
+        return (x, y)
