@@ -1,6 +1,11 @@
 '''
 The Wallet class
 
+-The wallet will generate ECC keys upon instantiation.
+-An address can be given by a base-64 (or base-58) representation of the hashed public key x-value
+-(Except that both (x,y) and (x,p-y) will be valid points on the curve.
+
+
 '''
 
 '''Imports'''
@@ -17,6 +22,13 @@ class Wallet:
     '''Formatting Variables'''
     MIN_EXP = 7
     DICT_EXP = 11
+    BASE58_LIST = ['1', '2', '3', '4', '5', '6', '7', '8', '9',
+                   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J',
+                   'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T',
+                   'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c',
+                   'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'm',
+                   'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+                   'w', 'x', 'y', 'z']
 
     def __init__(self, bits=128, checksum_bits=4, seed=None, a=None, b=None, p=None):
         '''
@@ -48,6 +60,7 @@ class Wallet:
         '''Only way to recover the seed after instantiation is from seed phrase'''
         self.master_keys = self.generate_master_keys(seed)
         self.seed_phrase = self.get_seed_phrase(seed)  # Saving seed_phrase is only for testing.
+        self.address = self.get_address()
 
     def get_seed(self):
         '''
@@ -134,6 +147,19 @@ class Wallet:
         private_key = hex(pk_int)
         return public_key, private_key
 
+    def get_address(self):
+        pub, _ = self.master_keys
+        hx, hy = pub
+        x = int(hx, 16)
+        y = int(hy, 16)
+        compressed_string = self.curve.compress_public_key((x, y))
+        return self.int_to_base58(int(compressed_string, 16))
+
+    def recover_publickey_from_address(self, address: str):
+        compressed_string = '0' + hex(self.base58_to_int(address))[2:]
+        (x, y) = self.curve.decompress_public_key(compressed_string)
+        return (hex(x), hex(y))
+
     def sign_transaction(self, tx_hash: str):
         '''
         Explanation here
@@ -217,3 +243,37 @@ class Wallet:
 
         (x1, _) = point
         return r == x1 % n
+
+    def int_to_base58(self, num: int) -> str:
+        '''
+        Explanation here
+        '''
+        base58_string = ''
+        num_copy = num
+        # If num_copy is negative, keep adding 58 until it isn't
+        # Negative numbers will always result in a single residue
+        # Maybe think about returning error. No negative integer should ever be used.
+        while num_copy < 0:
+            num_copy += 58
+        if num_copy == 0:
+            base58_string = '1'
+        else:
+            while num_copy > 0:
+                remainder = num_copy % 58
+                base58_string = self.BASE58_LIST[remainder] + base58_string
+                num_copy = num_copy // 58
+        return base58_string
+
+    def base58_to_int(self, base58_string: str) -> int:
+        '''
+        To convert a base58 string back to an int:
+            -For each character, find the numeric index in the list
+            -Multiply this numeric value by a corresponding power of 58
+            -Sum all values
+        '''
+
+        sum = 0
+        for x in range(0, len(base58_string)):
+            numeric_val = self.BASE58_LIST.index(base58_string[x:x + 1])
+            sum += numeric_val * pow(58, len(base58_string) - x - 1)
+        return sum
