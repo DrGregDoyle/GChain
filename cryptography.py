@@ -1,21 +1,13 @@
 '''
 Methods for ECC cryptography
 
-
-TODO: Implement Schoof's algorithm
-    -Schoof's algorithm will yield the group order of the elliptic curve E given by
-        y^2 = x^3 + ax + b
-    over F_p. In this fashion, we can dynamically generate p of fixed bit length, and then
-    use Schoof's algorithm to find a generator.
-    -Until then, we dynamically find a generator only for small primes.
-    -We fix our large prime to be the bitcoin prime and the generator similarly
+#TODO:
+    -Implement Schoof's algorithm
 '''
 
 '''Imports'''
 import primefac
 import secrets
-
-'''Constants'''
 
 '''Mathematical Methods'''
 
@@ -23,41 +15,25 @@ import secrets
 def generate_nbit_prime(n: int):
     '''
     Will generate an n-bit prime.
-    We take 4-bits as the minimum n.
+    Defaults to 4-bits for small n.
     '''
 
     bits = max(4, n)
     num = secrets.randbits(bits)
-    while not primefac.isprime(num):
+    while not primefac.isprime(num) and num.bit_length() != bits:
         num -= 1
         if num < 2:
             num = secrets.randbits(bits)
     return num
 
 
-def is_quadratic_residue(n: int, p: int) -> bool:
-    '''
-    returns true if n is a QR and False otherwise
-    From Euler's theorem, an integer n is a QR mod p iff
-
-    n^(p-1)/2 = 1 (mod p)
-    '''
-    if n % p == 0:
-        return True
-    return pow(n, (p - 1) // 2, p) == 1
-
-
 def legendre_symbol(n: int, p: int) -> int:
     '''
-    Returns 0 if p | n, 1 if n is a qr mod p and -1 if not.
+    Returns 0 if p | n and a^(p-1)/2 % p otherwise
     '''
     if n % p == 0:
         return 0
-    qr = is_quadratic_residue(n, p)
-    if qr:
-        return 1
-    else:
-        return -1
+    return pow(n, (p - 1) // 2, p)
 
 
 def tonelli_shanks(n: int, p: int):
@@ -65,7 +41,7 @@ def tonelli_shanks(n: int, p: int):
     If n is a quadratic residue mod p, then we return an integer r such that r^2 = n (mod p).
     '''
     '''Verify n is a QR'''
-    if not is_quadratic_residue(n, p):
+    if legendre_symbol(n, p) == -1:
         return None
 
     '''Trivial case'''
@@ -86,7 +62,7 @@ def tonelli_shanks(n: int, p: int):
 
     # 2) Find a quadratic non residue
     z = 2
-    while is_quadratic_residue(z, p):
+    while legendre_symbol(z, p) != 1:
         z += 1
 
     # 3) Configure initial variables
