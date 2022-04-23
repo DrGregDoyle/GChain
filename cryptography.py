@@ -247,7 +247,11 @@ class EllipticCurve:
         assert self.add_points((x, y), (x, neg_y)) is None
         return y
 
-    def is_on_curve(self, point: tuple):
+    '''
+    Point Verification
+    '''
+
+    def is_on_curve(self, point: tuple) -> bool:
         '''
         Given a point P = (x,y) we return true if
         E(x,y) = 0 (mod p)
@@ -276,7 +280,7 @@ class EllipticCurve:
             return True
 
         '''General Case'''
-        return pow(val, (self.p - 1) // 2, self.p) == 1
+        return legendre_symbol(val, self.p) == 1
 
     '''Adding and Scalar Multiplication'''
 
@@ -351,59 +355,11 @@ class EllipticCurve:
         bitlength = len(bitstring)
         temp_point = point
         for x in range(1, bitlength):
-            temp_point = self.add_points(temp_point, temp_point)
+            temp_point = self.add_points(temp_point, temp_point)  # Double regardless of bit
             bit = bitstring[x:x + 1]
             if int(bit) == 1:
-                temp_point = self.add_points(temp_point, point)
+                temp_point = self.add_points(temp_point, point)  # Add to the doubling if bit == 1
 
         '''Verify results'''
         assert self.is_on_curve(temp_point)
         return temp_point
-
-    '''Public and Private Keys'''
-
-    def generate_keys(self):
-        '''
-        We generate a random number then return it and the corresponding public key.
-        The random number size will be based on the bit length of the field prime
-        '''
-        private_key = 0
-        bits = self.p.bit_length()
-        while private_key.bit_length() != bits:
-            private_key = secrets.randbits(bits)
-        public_key = self.generate_public_key(private_key)
-        return public_key, private_key
-
-    def generate_public_key(self, private_key: int):
-        val = self.scalar_multiplication(private_key, self.generator)
-        if val is None:
-            print("NONE!")
-        return val
-
-    def compress_public_key(self, point: tuple) -> str:
-        '''
-        Will yield a hex representation of the x point + modulus of y prefix
-        '''
-        x, y = point
-        prefix = ''
-        if y % 2 == 0:
-            prefix = '02'
-        else:
-            prefix = '03'
-        return prefix + hex(x)[2:]
-
-    def decompress_public_key(self, compressed_key: str) -> tuple:
-        '''
-        Will retrieve the public key point on the curve.
-        Compressed_key will be a Hex string
-        '''
-        prefix = int(compressed_key[0:2], 16)
-        x = int(compressed_key[2:], 16)
-        assert self.is_x_on_curve(x)
-        candidate_y = self.find_y_from_x(x)
-        if candidate_y % 2 == prefix % 2:
-            y = candidate_y
-        else:
-            y = self.p - candidate_y
-        assert self.is_on_curve((x, y))
-        return (x, y)
