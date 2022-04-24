@@ -10,6 +10,8 @@ The Wallet class
 
 
 #TODO: Allow for dynamically generated addresses from the master keys
+#TODO: Pull a dictionary from a web api for the seed phrase
+#TODO: Add prefix mapping function for address creation - the prefix will tie into the locking/unlocking script
 
 
 '''
@@ -26,8 +28,10 @@ from cryptography import EllipticCurve
 
 
 class Wallet:
-    '''Formatting Variables'''
-    MIN_EXP = 7
+    '''
+
+    '''
+    MINBIT_EXP = 7
     DICT_EXP = 11
     BASE58_LIST = ['1', '2', '3', '4', '5', '6', '7', '8', '9',
                    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J',
@@ -37,76 +41,102 @@ class Wallet:
                    'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
                    'w', 'x', 'y', 'z']
 
-    def __init__(self, bits=128, seed_checksum_bits=4, address_checksum_bits=32, version=0, seed=None, a=None, b=None,
+    def __init__(self, seed_bits=128, address_checksum_bits=32, version=0, seed=None, a=None,
+                 b=None,
                  p=None):
         '''
-        The bits and checksum_bits values are used to generate the seed.
-        The curve parameters a,b and p are None by default, which means we use the BITCOIN standard values.
+        
         '''
 
-        '''Create the Elliptic curve'''
+        # Create the Elliptic curve
         self.curve = EllipticCurve(a, b, p)
 
-        '''Automatically adjust bitlength and checksum if out of bounds'''
-        if bits < pow(2, self.MIN_EXP):  # Min is 128 bits
-            bits = pow(2, self.MIN_EXP)
-        if (bits + seed_checksum_bits) % self.DICT_EXP != 0:
-            seed_checksum_bits = -bits % self.DICT_EXP
-        if seed_checksum_bits == 0:
-            seed_checksum_bits = self.DICT_EXP
+        # Establish seed bits and checksum_bits
+        self.seed_bits = max(seed_bits, pow(2, self.MINBIT_EXP))
+        for x in range(1, self.DICT_EXP + 1):
+            if (self.seed_bits + x) % self.DICT_EXP == 0:
+                self.seed_checksum_bits = x
 
-        self.bits = bits
-        self.seed_checksum_bits = seed_checksum_bits
+        assert (self.seed_bits + self.seed_checksum_bits) % self.DICT_EXP == 0
 
-        '''Either create a new seed or recover old wallet'''
+        # Create new seed or use given seen
         if seed is None:
             seed = self.get_seed()
         else:
             seed = seed
 
-        '''After instantiation we generate the master keys and the recovery phrase'''
-        '''Only way to recover the seed after instantiation is from seed phrase'''
+        # Use seed to generate keys and seed phrase
         self.master_keys = self.generate_master_keys(seed)
-        self.seed_phrase = self.get_seed_phrase(seed)  # Saving seed_phrase is only for testing.
         self.address = self.get_address(version, address_checksum_bits)
+        self.seed_phrase = self.get_seed_phrase(seed)  # Saving seed_phrase is only for testing.
+
+    '''
+    PROPERTIES
+    '''
+
+    @property
+    def public_key(self):
+        pub, _ = self.master_keys
+        return pub
+
+    @property
+    def public_key_point(self):
+        pub, _ = self.master_keys
+        hx, hy = pub
+        return (int(hx, 16), int(hy, 16))
+
+    @property
+    def compressed_public_key(self):
+        x, y = self.public_key_point
+        parity = y % 2
+        prefix = format(2 + (1 + pow(-1, parity + 1)) // 2, '02x')
+        return prefix + hex(x)[2:]
+
+    '''
+    SEED PHRASE
+    '''
 
     def get_seed(self):
         '''
-        Should be run once during instantiation in order to generate a seed for the Wallet.
-        The seed will be needed to generate the mnemonic seed phrase for the user.
-        The seed will be needed to make the "Master Keys" for the Wallet.
-        The seed will be able to be recovered from the seed_phrase in order to generate the Master Keys again.
-        We NEVER save the seed value to the Wallet class.
+        Will generate a random seed if the wallet is instantiated without one
         '''
 
         seed = 0
-        while seed.bit_length() != self.bits:
-            seed = secrets.randbits(self.bits)
+        while seed.bit_length() != self.seed_bits:
+            seed = secrets.randbits(self.seed_bits)
         return seed
 
     def get_seed_phrase(self, seed: int) -> list:
         '''
-        Will generate a seed phrase - default is 128 bit entropy w 4 bits as checksum.
-            For other bitsizes, the bitlength of entropy + checksum must be divisible by 11 = DICT_EXP
-            (Why? 2^11 = 2048, the number of words in the dict. If we change the dictionary, we update DICT_EXP.)
+        Will generate a seed phrase from a given seed.
+        Phrase will be index values in the dictionary.
+        Dictionary size is given by 2^DICT_EXP.
+        The bits and seed_checksum bits need to sum to a value divisible by DICT_EXP
         '''
 
-        '''Create index string = entropy + checksum'''
-        entropy = bin(seed)[2:2 + self.bits]
+        # Create binary string with bits size
+        entropy = bin(seed)[2:2 + self.seed_bits]
+
+        # Hash the entropy and take the first seed_checksum_bits
         checksum_hash = sha256(entropy.encode()).hexdigest()
         check_sum = bin(int(checksum_hash, 16))[2: 2 + self.seed_checksum_bits]
+
+        # Concatenate the entropy and check_sum string
         index_string = entropy + check_sum
 
-        '''Find indices'''
+        # Verify string is divisible by DICT_EXP
+        assert len(index_string) % self.DICT_EXP == 0
+
+        # Use the string to determine word indices
         index_list = []
         for x in range(0, len(index_string) // self.DICT_EXP):
             indice = index_string[x * self.DICT_EXP: (x + 1) * self.DICT_EXP]
             index_list.append(int(indice, 2))
 
-        '''Load dictionary'''
-        df_dict = pd.read_csv('./english_dictionary.txt', header=None)  # TODO: Pull a dictionary from a web api
+        # Load dictionary from file
+        df_dict = pd.read_csv('./english_dictionary.txt', header=None)
 
-        '''Find indexed words and save to list'''
+        # Retrieve the words at the given index and return the seed phrase
         word_list = []
         for i in index_list:
             word_list.append(df_dict.iloc[[i]].values[0][0])
@@ -117,23 +147,27 @@ class Wallet:
         Using the seed phrase, we recover the original seed.
         '''
 
-        '''Load dictionary'''
+        # Load dictionary from file
         df_dict = pd.read_csv('./english_dictionary.txt', header=None)
 
-        '''Get index from word'''
+        # Get the dictionary index from the word
         number_list = []
         for s in seed_phrase:
             number_list.append(df_dict.index[df_dict[0] == s].values[0])
 
-        '''Change numbers into binary add concat as string'''
+        # Express the index as a binary string of fixed DICT_EXP length
         index_string = ''
         for n in number_list:
-            index_string += format(n, "011b")
+            index_string += format(n, f"0{self.DICT_EXP}b")
 
-        '''Verify'''
-        entropy = index_string[:self.bits]
+        # Get the first self.bits from the binary string and return the corresponding integer
+        entropy = index_string[:self.seed_bits]
         seed = int(entropy, 2)
         return seed
+
+    '''
+    ENCRYPTION KEYS
+    '''
 
     def generate_master_keys(self, seed: int):
         '''
@@ -141,142 +175,171 @@ class Wallet:
         We use the first 256bits to generate the keys
         We save the remaining 256bits as the Master Chain Code
         '''
+
+        # Generate 512-bit hex string
         seed_hash512 = sha512(str(seed).encode()).hexdigest()
-        binary_string_512 = bin(int(seed_hash512, 16))[2:]
-        private_key_string = binary_string_512[0:256]
-        master_chain_string = binary_string_512[256:]
 
-        pk_int = int(private_key_string, 2) % self.curve.p
-        cc = int(master_chain_string, 2)  # Chain code unused for now
+        # Verify bitsize = 512-bits = 64 bytes = 128 hex characters
+        assert len(seed_hash512) == 128
 
-        (x, y) = self.curve.generate_public_key(pk_int)
-        return (hex(x), hex(y)), hex(pk_int)
+        # Private key is the first 256 bits (64 characters)
+        private_key = int(seed_hash512[:64], 16)
+
+        # Chain code is second 256 bits
+        self.chain_code = int(seed_hash512[64:], 16)
+
+        # Generate public key from private_key
+        public_key = self.curve.scalar_multiplication(private_key, self.curve.generator)
+
+        # Verify the key is on the curvy
+        assert self.curve.is_on_curve(public_key)
+
+        # Return hex values of public and private key
+        x, y = public_key
+        return (hex(x), hex(y)), hex(private_key)
+
+    '''
+    ADDRESS
+    '''
 
     def get_address(self, version: int, checksum_bits: int, prefix_bits=8):
         '''
-        Address method here:
+        Using the compressed public key of the wallet, we obtain our address as follows:
+            1) Hash the compressed public key using sha256
+            2) Hash the result of 1) using ripemd160 - this yields a hex string with 40 characters
+            3) Prepend a 1-byte (2 hex) prefix to 2) - call this the versioned hash
+            4) Sha256 hash the versioned hash twice - take the first "checksum_bits" bits and append to end of versioned hash
+            5) Encode the versioned hash using base58 - encode the prefix separately as it will not necessarily map to the base58 value
         '''
-        # Get public key as int
-        (hx, hy), _ = self.master_keys
-        x = int(hx, 16)
-        y = int(hy, 16)
 
-        # Compress public key to hex string
-        c_pubkey = self.curve.compress_public_key((x, y))
+        # 1) Hash the compressed public key using sha256
+        hash1 = sha256(self.compressed_public_key.encode()).hexdigest()
 
-        ##Hash twice##
-        # Sha256 first
-        pub_hash1 = sha256(c_pubkey.encode()).hexdigest()
-
-        # Ripemd160
+        # 2) Hash 1) using ripemd160
         ripemd160 = hashlib.new('ripemd160')
-        ripemd160.update(pub_hash1.encode())
-        hashed_cpubkey = ripemd160.hexdigest()
+        ripemd160.update(hash1.encode())
+        hash2 = ripemd160.hexdigest()
 
-        # Prefix
-        prefix = format(version, f'0{prefix_bits // 4}x')  # Make the version have full byte count
+        # 3) Prepend a 1-byte prefix to 2)
+        prefix = format(version, f'0{prefix_bits // 4}x')
+        versioned_hash = prefix + hash2
 
-        # Checksum
-        versioned_cpubkey = prefix + hashed_cpubkey
-        hash1 = sha256(versioned_cpubkey.encode()).hexdigest()
-        hash2 = sha256(hash1.encode()).hexdigest()
-        checksum = hash2[0:checksum_bits // 4]
+        # 4) Sha256 the versioned_hash twice. Append the first "checksum_bits" bits
+        hash4 = sha256(sha256(versioned_hash.encode()).hexdigest().encode()).hexdigest()
+        checksum = hash4[:checksum_bits // 4]
+        versioned_hash += checksum
 
-        payload = versioned_cpubkey + checksum
-        final_prefix = payload[0:prefix_bits // 4]
-        final_payload = payload[prefix_bits // 4:]
+        # 5) Encode the versioned hash using base58 - prefix will get encoded separately
+        encoded_prefix = self.int_to_base58(int(prefix, 16))
+        encoded_versioned_hash = self.int_to_base58(int(versioned_hash[2:], 16))
 
-        # Verify address size by # of hex chars. 50 chars = 25 bytes
-        assert len(payload) == 40 + prefix_bits // 4 + checksum_bits // 4
-        assert len(final_prefix) == prefix_bits // 4
-        assert len(final_payload) == 40 + checksum_bits // 4
+        # Verify byte sizes
+        assert len(prefix) == prefix_bits // 4
+        assert len(checksum) == checksum_bits // 4
+        assert len(versioned_hash) - len(prefix) - len(checksum) == 40
 
-        # We use int_to_base58 for the prefix - need a mapping function
-        return self.int_to_base58(int(final_prefix, 16)) + self.int_to_base58(int(final_payload, 16))
+        # Return address
+        return encoded_prefix + encoded_versioned_hash
+
+    '''
+    TRANSACTIONS
+    '''
 
     def sign_transaction(self, tx_hash: str):
         '''
-        Explanation here
+        Given a transaction hash, we return a signature (r,s) following the ECDSA.
+        We use the private key of the Wallet in order to sign.
+        We verify that the signature will be successfully validated using the public key
+
+        Algorithm:
+        ---------
+        Let E denote the elliptic curve of the wallet and let n denote the group order.
+        We emphasize that n IS NOT necessarily equal to the characteristic p of F_p.
+        Let t denote the private_key.
+
+        1) Verify that n is prime - the signature will not work if we do not have prime group order.
+        2) Let Z denote the integer value of the first n BITS of the transaction hash.
+        3) Select a random integer k in [1, n-1]. As n is prime, k will be invertible.
+        4) Calculate the curve point (x,y) =  k * generator
+        5) Compute r = x (mod n) and s = k^(-1)(Z + r * t) (mod n). If either r or s = 0, repeat from step 3.
+        6) The signature is the pair (r, s)
         '''
-        if not self.curve.has_prime_order:  # Signature algorithm only works for curves w prime order group
-            return -1
-        else:
-            n = self.curve.order
 
-        # Get private key
-        _, priv_hex = self.master_keys
-        private_key = int(priv_hex, 16)
+        # 1) Verify that the curve has prime group order
+        assert self.curve.has_prime_order
+        n = self.curve.order
 
-        # Find bitlength of tx_hash
-        hash_binary_string = bin(int(tx_hash, 16))
-        while len(hash_binary_string) > self.curve.order.bit_length():
-            hash_binary_string = hash_binary_string[:-1]  # lop off bits on the right
-        z = int(hash_binary_string, 2)
+        # 2) Take the first n bits of the transaction hash
+        Z = int(bin(int(tx_hash, 16))[2:2 + n], 2)
 
-        # Loop until valid signature found
+        # 3) Select a random integer k (Loop from here)
         signed = False
         while not signed:
-            # Select cryptographically secure random integer k from [1,n-1]
-            k = 0
-            while math.gcd(k, n) > 1:
-                k = secrets.randbelow(n)
+            k = secrets.randbelow(n)
 
-            # Calculate k * G
-            curve_point = self.curve.scalar_multiplication(k, self.curve.generator)
-            x1, y1 = curve_point
-            r = x1 % n
-            s = (pow(k, -1, n) * (z + r * private_key)) % n
+            # 4) Calculate curve point
+            x, y = self.curve.scalar_multiplication(k, self.curve.generator)
 
-            # Repeat loop if one of r, s equals zero
+            # 5) Compute r and s
+            _, priv = self.master_keys
+            private_key = int(priv, 16)
+            r = x % n
+            s = (pow(k, -1, n) * (Z + r * private_key)) % n
+
             if r != 0 and s != 0:
-                signed = self.verify_signature((r, s), tx_hash)
-        return (hex(r), hex(s))
+                sig = (hex(r), hex(s))
+                signed = self.verify_signature(sig, tx_hash)
+
+        # 6) Return the signature (r,s) - as hex strings
+        return sig
 
     def verify_signature(self, signature: tuple, tx_hash: str) -> bool:
         '''
-        Verifies a given signature and tx_hash against the public key of the wallet.
+        Given a signature (r,s) and a transaction hash, we verify the signature against the Wallet's public key.
 
-        Signature will be passed in as an int tuple
+
+        Algorithm
+        --------
+        Let n denote the group order of the elliptic curve wrt the Wallet.
+
+        1) Verify that n is prime and that (r,s) are integers in the interval [1,n-1]
+        2) Let Z be the integer value of the first n BITS of the transaction hash
+        3) Let u1 = Z * s^(-1) (mod n) and u2 = r * s^(-1) (mod n)
+        4) Calculate the curve point (x,y) = (u1 * generator) + (u2 * public_key)
+            (where * is scalar multiplication, and + is rational point addition mod p)
+        5) If r = x (mod n), the signature is valid.
         '''
-        if not self.curve.has_prime_order:  # Signature algorithm only works for curves w prime order group
-            return False
-        else:
-            n = self.curve.order
 
-        # Get public key
-        pub_hex, _ = self.master_keys
-        hx, hy = pub_hex
-        x = int(hx, 16)
-        y = int(hy, 16)
-        public_key = (x, y)
+        # 1) Verify our values first
+        assert self.curve.has_prime_order
+        n = self.curve.order
+        (r, s) = signature
+        r = int(r, 16)
+        s = int(s, 16)
+        assert 1 <= r <= n - 1
+        assert 1 <= s <= n - 1
 
-        # Get signature and s^-1
-        r, s = signature
-        if type(r) == str:
-            r = int(r, 16)
-        if type(s) == str:
-            s = int(s, 16)
+        # 2) Take the first n bits of the transaction hash
+        Z = int(bin(int(tx_hash, 16))[2:2 + n], 2)
+
+        # 3) Calculate u1 and u2
         s_inv = pow(s, -1, n)
-
-        # Find bitlength of tx_hash
-        hash_binary_string = bin(int(tx_hash, 16))
-        while len(hash_binary_string) > self.curve.order.bit_length():
-            hash_binary_string = hash_binary_string[:-1]  # lop off bits on the right
-        z = int(hash_binary_string, 2)
-
-        # Get coefficients
-        u1 = (z * s_inv) % n
+        u1 = (Z * s_inv) % n
         u2 = (r * s_inv) % n
 
+        # 4) Calculate the point
         point = self.curve.add_points(self.curve.scalar_multiplication(u1, self.curve.generator),
-                                      self.curve.scalar_multiplication(u2, public_key))
+                                      self.curve.scalar_multiplication(u2, self.public_key_point))
 
-        # Return True/False
+        # 5) Return True/False based on x. Account for point at infinity.
         if point is None:
             return False
+        x, y = point
+        return r == x % n
 
-        (x1, _) = point
-        return r == x1 % n
+    '''
+    BASE58
+    '''
 
     def int_to_base58(self, num: int) -> str:
         '''
