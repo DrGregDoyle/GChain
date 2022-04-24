@@ -287,15 +287,24 @@ class Wallet:
             s = (pow(k, -1, n) * (Z + r * private_key)) % n
 
             if r != 0 and s != 0:
-                sig = (hex(r), hex(s))
+                h_r = hex(r)[2:]
+                h_s = hex(s)[2:]
+
+                while len(h_r) < self.curve.order.bit_length() // 4:
+                    h_r = '0' + h_r
+                while len(h_s) < self.curve.order.bit_length() // 4:
+                    h_s = '0' + h_s
+
+                sig = h_r + h_s
                 signed = self.verify_signature(sig, tx_hash)
 
-        # 6) Return the signature (r,s) - as hex strings
+        # 6) Return the signature (r,s) as the 128-character hex string r + s
         return sig
 
-    def verify_signature(self, signature: tuple, tx_hash: str) -> bool:
+    def verify_signature(self, signature: str, tx_hash: str) -> bool:
         '''
         Given a signature (r,s) and a transaction hash, we verify the signature against the Wallet's public key.
+        NB: The signature will be a 128-character hex string representing r + s
 
 
         Algorithm
@@ -312,10 +321,10 @@ class Wallet:
 
         # 1) Verify our values first
         assert self.curve.has_prime_order
+        assert len(signature) == self.curve.order.bit_length() // 2
         n = self.curve.order
-        (r, s) = signature
-        r = int(r, 16)
-        s = int(s, 16)
+        r = int(signature[:self.curve.order.bit_length() // 4], 16)
+        s = int(signature[self.curve.order.bit_length() // 4:], 16)
         assert 1 <= r <= n - 1
         assert 1 <= s <= n - 1
 
