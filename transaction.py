@@ -1,63 +1,102 @@
 '''
-The transaction class
+The Transaction class
 
+The Transaction will contain the following fields with assigned sizes:
 
-Bits    | Bytes     | Hex chars     | Field
--------------------------------------------
-32      | 4         | 8             | Version
-64      | 8         | 16            | Input count
-var     | var       | var           | All inputs
-64      | 8         | 16            | Output count
-var     | var       | var           | All outputs
-32      | 4         | 8             | Locktime
-
-
-#TODO: Get variable length integer working for input/output count
+#|  field       |   bit size    |   hex chars   |   byte size       |#
+#====================================================================#
+#|  version     |   32          |   8           |   4               |#
+#|  input count |   VLI         |   VLI         |   VLI             |#
+#|  inputs      |   var         |   var         |   var             |#
+#|  output count|   VLI         |   VLI         |   VLI             |#
+#|  outputs     |   var         |   var         |   var             |#
+#|  locktime    |   32          |   8           |   4               |#
 
 
 '''
 
-'''Imports'''
-from utxo import UTXO, OUTPUT_UTXO, decode_raw_output, decode_raw_utxo
+'''
+IMPORTS
+'''
+from utxo import decode_raw_output_utxo, decode_raw_input_utxo, UTXO_INPUT, UTXO_OUTPUT
 from hashlib import sha256
 import secrets
-from script_engine import ScriptEngine
+
+'''
+TRANSACTION 
+'''
 
 
 class Transaction:
-    VERSION_BYTES = 4
-    INPUT_NUM_BYTES = 8
-    OUTPUT_NUM_BYTES = 8
-    LOCKTIME_BYTES = 4
+    '''
 
-    def __init__(self, version: int, input_count: int, inputs: list, output_count: int, outputs: list, locktime=0):
+    '''
+    VERSION_BITS = 32
+    LOCKTIME_BITS = 32
+
+    def __init__(self, inputs: list, outputs: list, version=1, locktime=0):
         '''
-        We create the transaction
+        The inputs and outputs will be lists of raw utxos
         '''
 
-        self.version = format(version, f'0{2 * self.VERSION_BYTES}x')
-        self.input_count = format(input_count, f'0{2 * self.INPUT_NUM_BYTES}x')
-        self.inputs = inputs
-        self.output_count = format(output_count, f'0{2 * self.OUTPUT_NUM_BYTES}x')
-        self.outputs = outputs
-        self.locktime = format(locktime, f'0{2 * self.LOCKTIME_BYTES}x')
+        # Format version and locktime
+        self.version = format(version, f'0{self.VERSION_BITS // 4}x')
+        self.locktime = format(locktime, f'0{self.LOCKTIME_BITS // 4}x')
 
-    def get_raw_transaction(self):
-        '''
-        Output the concatenated hex strings of the unsigned transaction
-        '''
+        # Iterate over raw input utxo's and store the objects
+        self.inputs = []
+        for i in inputs:
+            input_utxo = decode_raw_input_utxo(i)
+            self.inputs.append(input_utxo)
+
+        # Iterate over raw output utxo's and store the objects
+        self.outputs = []
+        for t in outputs:
+            output_utxo = decode_raw_output_utxo(t)
+            self.outputs.append(output_utxo)
+
+        # Get VLI for input count
+        input_count = len(self.inputs)
+        if input_count < pow(2, 8) - 3:
+            self.input_num = format(input_count, '02x')
+        elif pow(2, 8) - 3 <= input_count <= pow(2, 16):
+            self.input_num = 'FD' + format(input_count, '04x')
+        elif pow(2, 16) < input_count <= pow(2, 32):
+            self.input_num = 'FE' + format(input_count, '08x')
+        else:
+            self.input_num = 'FF' + format(input_count, '016x')
+
+        # Get VLI for output count
+        output_count = len(self.outputs)
+        if output_count < pow(2, 8) - 3:
+            self.output_num = format(output_count, '02x')
+        elif pow(2, 8) - 3 <= output_count <= pow(2, 16):
+            self.output_num = 'FD' + format(output_count, '04x')
+        elif pow(2, 16) < output_count <= pow(2, 32):
+            self.output_num = 'FE' + format(output_count, '08x')
+        else:
+            self.output_num = 'FF' + format(output_count, '016x')
+
+    '''
+    PROPERTIES
+    '''
+
+    @property
+    def raw_transaction(self):
         input_string = ''
-        for i in self.inputs:
-            input_string += i
-
         output_string = ''
+
+        for i in self.inputs:
+            input_string += i.raw_utxo
+
         for t in self.outputs:
-            output_string += t
+            output_string += t.raw_utxo
 
-        return self.version + self.input_count + input_string + self.output_count + output_string + self.locktime
+        return self.version + self.input_num + input_string + self.output_num + output_string + self.locktime
 
-    def get_id(self):
-        return sha256(self.get_raw_transaction().encode()).hexdigest()
+    @property
+    def id(self):
+        return sha256(self.raw_transaction.encode()).hexdigest()
 
 
 '''
@@ -65,73 +104,70 @@ Decoding
 '''
 
 
-def decode_raw_transaction(raw_tx: str, VERSION_BYTES=4, INPUT_NUM_BYTES=8, OUTPUT_NUM_BYTES=8, LOCKTIME_BYTES=4):
+def decode_raw_transaction(raw_tx: str):
     '''
-    We decode the raw transaction using the raw_tx string and byte constants
+    We decode the raw transaction using the raw_tx string and bit constants.
     '''
-    index1 = 2 * VERSION_BYTES
-    index2 = index1 + 2 * INPUT_NUM_BYTES
 
+    # Get version
+    index1 = Transaction.VERSION_BITS // 4
     version = int(raw_tx[0:index1], 16)
-    input_count = int(raw_tx[index1:index2], 16)
 
-    temp_index_input = index2
+    # Get number of inputs
+    first_byte = int(raw_tx[index1:index1 + 2], 16)
+    input_num = first_byte
+    if first_byte < 253:
+        index2 = index1 + 2
+    elif first_byte == 253:
+        input_num = int(raw_tx[index1 + 2:index1 + 4])
+        index2 = index1 + 4
+    elif first_byte == 254:
+        input_num = int(raw_tx[index1 + 2:index1 + 8])
+        index2 = index1 + 8
+    else:
+        assert first_byte == 255
+        input_num = int(raw_tx[index1 + 2:index1 + 16])
+        index2 = index1 + 16
+
+    # Get all inputs
     inputs = []
-    for x in range(0, input_count):
-        test_utxo = decode_raw_utxo(raw_tx[temp_index_input:])
-        inputs.append(test_utxo.get_raw_utxo())
-        temp_index_input = temp_index_input + test_utxo.get_hex_chars()
+    for x in range(0, input_num):
+        input_utxo = decode_raw_input_utxo(raw_tx[index2:])
+        index2 += input_utxo.byte_size * 2
+        inputs.append(input_utxo.raw_utxo)
 
-    index3 = temp_index_input
-    index4 = index3 + 2 * OUTPUT_NUM_BYTES
-    output_count = int(raw_tx[index3:index4], 16)
+    # Get number of outputs
+    first_byte_output = int(raw_tx[index2:index2 + 2], 16)
+    output_num = first_byte_output
+    if first_byte_output < 253:
+        index3 = index2 + 2
+    elif first_byte_output == 253:
+        output_num = int(raw_tx[index1 + 2:index1 + 4])
+        index3 = index2 + 4
+    elif first_byte_output == 254:
+        output_num = int(raw_tx[index1 + 2:index1 + 8])
+        index3 = index2 + 8
+    else:
+        assert first_byte_output == 255
+        output_num = int(raw_tx[index1 + 2:index1 + 16])
+        index3 = index2 + 16
 
-    temp_index_output = index4
+    # Get all outputs
     outputs = []
-    for x in range(0, output_count):
-        output_utxo = decode_raw_output(raw_tx[temp_index_output:])
-        outputs.append(output_utxo.get_raw_output())
-        temp_index_output = temp_index_output + output_utxo.get_hex_chars()
+    for x in range(0, output_num):
+        output_utxo = decode_raw_output_utxo(raw_tx[index3:])
+        index3 += output_utxo.byte_size * 2
+        outputs.append(output_utxo.raw_utxo)
 
-    index5 = temp_index_output
-    index6 = index5 + 2 * LOCKTIME_BYTES
-    locktime = int(raw_tx[index5:index6], 16)
+    # Get locktime
+    locktime = int(raw_tx[index3: index3 + Transaction.LOCKTIME_BITS // 4], 16)
 
-    '''Verify that we've reached the end of the transaction'''
-    assert len(raw_tx) == index6
+    # Create transaction
+    new_transaction = Transaction(inputs=inputs, outputs=outputs, version=version, locktime=locktime)
 
-    return Transaction(version, input_count, inputs, output_count, outputs, locktime)
+    # Verify input and output num
+    assert int(new_transaction.input_num, 16) == input_num
+    assert int(new_transaction.output_num, 16) == output_num
 
-
-'''
-TESTING
-'''
-
-
-def test():
-    tx_id = sha256('Transaction'.encode()).hexdigest()
-    tx_index = 0
-    sig_script = hex(secrets.randbits(288))[2:]
-    sequence = 0xffffffff
-    input_utxo = UTXO(tx_id, tx_index, sig_script, sequence)
-
-    tx_index2 = 1
-    sig_script2 = hex(secrets.randbits(140))[2:]
-    input_utxo2 = UTXO(tx_id, tx_index2, sig_script2, sequence)
-
-    amount = secrets.randbelow(1000)
-    unlock_script = hex(secrets.randbits(360))[2:]
-    output_utxo = OUTPUT_UTXO(amount, unlock_script)
-
-    amount2 = secrets.randbelow(4000)
-    unlock_script2 = hex(secrets.randbits(155))[2:]
-    output_utxo2 = OUTPUT_UTXO(amount2, unlock_script2)
-
-    version = 1
-    input_count = 2
-    inputs = [input_utxo.get_raw_utxo(), input_utxo2.get_raw_utxo()]
-    output_count = 2
-    outputs = [output_utxo.get_raw_output(), output_utxo2.get_raw_output()]
-
-    t = Transaction(version, input_count, inputs, output_count, outputs)
-    return t
+    # Return transaction
+    return new_transaction

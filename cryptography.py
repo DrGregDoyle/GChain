@@ -1,21 +1,13 @@
 '''
 Methods for ECC cryptography
 
-
-TODO: Implement Schoof's algorithm
-    -Schoof's algorithm will yield the group order of the elliptic curve E given by
-        y^2 = x^3 + ax + b
-    over F_p. In this fashion, we can dynamically generate p of fixed bit length, and then
-    use Schoof's algorithm to find a generator.
-    -Until then, we dynamically find a generator only for small primes.
-    -We fix our large prime to be the bitcoin prime and the generator similarly
+#TODO:
+    -Implement Schoof's algorithm
 '''
 
 '''Imports'''
 import primefac
 import secrets
-
-'''Constants'''
 
 '''Mathematical Methods'''
 
@@ -23,41 +15,25 @@ import secrets
 def generate_nbit_prime(n: int):
     '''
     Will generate an n-bit prime.
-    We take 4-bits as the minimum n.
+    Defaults to 4-bits for small n.
     '''
 
     bits = max(4, n)
     num = secrets.randbits(bits)
-    while not primefac.isprime(num):
+    while not primefac.isprime(num) and num.bit_length() != bits:
         num -= 1
         if num < 2:
             num = secrets.randbits(bits)
     return num
 
 
-def is_quadratic_residue(n: int, p: int) -> bool:
-    '''
-    returns true if n is a QR and False otherwise
-    From Euler's theorem, an integer n is a QR mod p iff
-
-    n^(p-1)/2 = 1 (mod p)
-    '''
-    if n % p == 0:
-        return True
-    return pow(n, (p - 1) // 2, p) == 1
-
-
 def legendre_symbol(n: int, p: int) -> int:
     '''
-    Returns 0 if p | n, 1 if n is a qr mod p and -1 if not.
+    Returns 0 if p | n and a^(p-1)/2 % p otherwise
     '''
     if n % p == 0:
         return 0
-    qr = is_quadratic_residue(n, p)
-    if qr:
-        return 1
-    else:
-        return -1
+    return pow(n, (p - 1) // 2, p)
 
 
 def tonelli_shanks(n: int, p: int):
@@ -65,7 +41,7 @@ def tonelli_shanks(n: int, p: int):
     If n is a quadratic residue mod p, then we return an integer r such that r^2 = n (mod p).
     '''
     '''Verify n is a QR'''
-    if not is_quadratic_residue(n, p):
+    if legendre_symbol(n, p) == -1:
         return None
 
     '''Trivial case'''
@@ -86,7 +62,7 @@ def tonelli_shanks(n: int, p: int):
 
     # 2) Find a quadratic non residue
     z = 2
-    while is_quadratic_residue(z, p):
+    while legendre_symbol(z, p) != 1:
         z += 1
 
     # 3) Configure initial variables
@@ -123,7 +99,6 @@ def tonelli_shanks(n: int, p: int):
 
 class EllipticCurve:
     '''
-    We use the fixed Bitcoin values for 'real-world' testing.
     '''
     BITCOIN_PRIME = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
     BITCOIN_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
@@ -132,16 +107,13 @@ class EllipticCurve:
 
     def __init__(self, a=None, b=None, p=None):
         '''
-        We instantiate an elliptic curve of the form
+        We instantiate an elliptic curve E of the form
 
-            E = E(x,y) => y^2 = x^3  + ax + b (mod p)
+            y^2 = x^3 + ax + b
 
-        A point is a tuple or list of the form (x,y) = [x,y] - though we specify tuples.
-        We let None denote the point at infinity.
-        The point of infinity acts as identity for the elliptic curve group addition.
-        Observe that integer points mod p will still obey symmetry about the x-axis
-        That is, if (x1, y1) and (x2,y2) are such that x1 == x2 and y1 != y1
-        then y1 + y2 = 0 (mod p) and (x1,y1) + (x2,y2) = point at infinity, over Z_p
+        over a finite field F_p. Each curve E will have the parameters a, b and p as class variables, along with the
+        order of the corresponding finite abelian group. Further, for p sufficiently small we attach a random
+        generator as class variable - and for p sufficienly large we use the BITCOIN values.
 
         '''
         # Linear coefficient
@@ -188,7 +160,9 @@ class EllipticCurve:
 
     def find_generator(self):
         '''
-        If the curve has prime order we return a random point.
+        If the curve has prime order we return a random point. Otherwise, we find the prime divisors of the group
+        order, then find a point whose scalar multiplication of the order divided by a prime divisor does not yield
+        zero, for all such primes.
         '''
         if self.has_prime_order:
             return self.find_integer_point()
@@ -213,7 +187,7 @@ class EllipticCurve:
         '''
         Using the legendre symbol addition formula
 
-        E(F_p) = \sum_{x \in F_p} ( (x^3 + ax + b)/p )
+        E(F_p) = \sum_{x \in F_p} ( (x^3 + ax + b) | p )
 
         where the right most term is the Legendre symbol
         '''
@@ -242,86 +216,84 @@ class EllipticCurve:
         assert self.is_on_curve(point)
         return point
 
-    def find_inverse(self, point: tuple):
-        '''
-        We return the additive inverse point inv_point such that point + inv_point = point at infinity
-        '''
-        if point is None:
-            return None
-
-        x, y = point
-        if y == 0:
-            return point
-        return (x, -y % self.p)
-
     def find_y_from_x(self, x: int):
         '''
         Using tonelli shanks, we return y such that E(x,y) = 0, if x is on the curve.
         Note that if (x,y) is a point then (x,p-y) will be a point as well.
         '''
 
-        '''Verify x'''
+        # Verify x is on the curve
         assert self.is_x_on_curve(x)
 
-        '''Find square root'''
-        val = (x * x * x + self.a * x + self.b) % self.p
+        # Find the two possible y values
+        val = (x ** 3 + self.a * x + self.b) % self.p
         y = tonelli_shanks(val, self.p)
         neg_y = -y % self.p
+
+        # Check y values
         assert self.is_on_curve((x, y))
         assert self.add_points((x, y), (x, neg_y)) is None
+
+        # Return y
         return y
 
-    def is_on_curve(self, point: tuple):
+    '''
+    Point Verification
+    '''
+
+    def is_on_curve(self, point: tuple) -> bool:
         '''
-        Given a point P = (x,y) we return true if
-        E(x,y) = 0 (mod p)
+        Return True if (x,y) is a rational point of E(F_p), that is, E(x,y) == 0 (mod p)
         '''
-        '''Point at infinity case'''
+
+        # Point at infinity
         if point is None:
             return True
 
-        '''General case'''
+        # General Case
         x, y = point
-        return (x * x * x - y * y + self.a * x + self.b) % self.p == 0
+        return (x ** 3 - y ** 2 + self.a * x + self.b) % self.p == 0
 
     def is_x_on_curve(self, x: int) -> bool:
         '''
-        If the value x^3 + ax + b (mod p) is a quadratic residue,
-            then there exists some y in Z_p such that y^2 = x^3 + ax + b.
-        Hence we return true if this value is a QR and false otherwise.
-
-        We use Euler's criterion: For an odd prime p, n is a quadratic residue iff n^(p-1)/2 = 1 (mod p).
+        A residue x is on the curve E iff x^3 + ax + b is a quadratic residue modulo p.
+        We use the legendre symbol on this value to return True or False as the case may be.
         '''
 
-        val = (x * x * x + self.a * x + self.b) % self.p
+        # Get value
+        val = x ** 3 + self.a * x + self.b
 
-        '''Trivial Case'''
+        # Trivial case
         if val % self.p == 0:
             return True
 
-        '''General Case'''
-        return pow(val, (self.p - 1) // 2, self.p) == 1
+        # General case
+        return legendre_symbol(val, self.p) == 1
 
-    '''Adding and Scalar Multiplication'''
+    '''
+    Group Operations
+    '''
 
     def add_points(self, point1: tuple, point2: tuple):
         '''
         Adding points using the elliptic curve addition rules.
         '''
-        '''Check points are on curve'''
+
+        # Verify points exist
         assert self.is_on_curve(point1)
         assert self.is_on_curve(point2)
 
-        '''Point at infinity case'''
+        # Point at infinity cases
         if point1 is None:
             return point2
         if point2 is None:
             return point1
 
+        # Get coordinates
         x1, y1 = point1
         x2, y2 = point2
 
-        '''Addition rules'''
+        # Get slope if it exists
         if x1 == x2:
             if y1 != y2:  # Points are inverses
                 return None
@@ -332,102 +304,61 @@ class EllipticCurve:
         else:  # Points are distinct
             m = ((y2 - y1) * pow(x2 - x1, -1, self.p)) % self.p
 
+        # Use the addition formulas
         x3 = (m * m - x1 - x2) % self.p
         y3 = (m * (x1 - x3) - y1) % self.p
-
         point = (x3, y3)
-        '''Verify result'''
+
+        # Verify result
         assert self.is_on_curve(point)
+
+        # Return sum of points
         return point
 
     def scalar_multiplication(self, n: int, point: tuple):
         '''
-        Using the double and add algorithm, we compute nP where P = point.
+        We use the double-and-add algorithm to add a point P with itself n times.
 
-        The algorithm has us break n into binary form, then for each bit,
-            going from most significant to least, do the following:
-            1st bit - ignore
-            each bit - double previous result
-            if bit = 1 - also add P
+        Algorithm:
+        ---------
+        Break n into a binary representation (big-endian).
+        Then iterate over each bit in the representation as follows:
+            1) If it's the first bit, ignore;
+            2) double the previous result (starting with P)
+            3) if the bit = 1, add a copy of P to the result.
 
-        Ex: n = 26, binary representation = 11010
-
-        bit |   action      | result
-        ----------------------------
-        1   | ignore        | P
-        1   | double & add  | 2P + P = 3P
-        0   |   double      | 6P
-        1   | double & add  | 12P +P = 13P
-        0   | double        | 26P
+        Ex: n = 26. Binary representation = 11010
+            bit     | action        | result
+            --------------------------------
+            1       | ignore        | P
+            1       | double/add    | 2P + P = 3P
+            0       | double        | 6P
+            1       | double/add    | 12P + P = 13P
+            0       | double        | 26P
         '''
 
-        '''Point at infinity case'''
-        if point is None or n == 0:
+        # Point at infinity case
+        if point is None:
             return None
 
-        '''Negative value implies multiplying the scalar by the inverse of the point'''
-        if n < 0:
-            n *= -1
-            point = self.find_inverse(point)
+        # Scalar multiple divides group order
+        if n % self.order == 0:
+            return None
 
-        '''Proceed with algorithm'''
+        # Take residue of n modulo the group order
+        n = n % self.order
+
+        # Proceed with algorithm
         bitstring = bin(n)[2:]
-        bitlength = len(bitstring)
         temp_point = point
-        for x in range(1, bitlength):
-            temp_point = self.add_points(temp_point, temp_point)
-            bit = bitstring[x:x + 1]
-            if int(bit) == 1:
-                temp_point = self.add_points(temp_point, point)
+        for x in range(1, len(bitstring)):
+            temp_point = self.add_points(temp_point, temp_point)  # Double regardless of bit
+            bit = int(bitstring[x:x + 1], 2)
+            if bit == 1:
+                temp_point = self.add_points(temp_point, point)  # Add to the doubling if bit == 1
 
-        '''Verify results'''
+        # Verify results
         assert self.is_on_curve(temp_point)
+
+        # Return point
         return temp_point
-
-    '''Public and Private Keys'''
-
-    def generate_keys(self):
-        '''
-        We generate a random number then return it and the corresponding public key.
-        The random number size will be based on the bit length of the field prime
-        '''
-        private_key = 0
-        bits = self.p.bit_length()
-        while private_key.bit_length() != bits:
-            private_key = secrets.randbits(bits)
-        public_key = self.generate_public_key(private_key)
-        return public_key, private_key
-
-    def generate_public_key(self, private_key: int):
-        val = self.scalar_multiplication(private_key, self.generator)
-        if val is None:
-            print("NONE!")
-        return val
-
-    def compress_public_key(self, point: tuple) -> str:
-        '''
-        Will yield a hex representation of the x point + modulus of y prefix
-        '''
-        x, y = point
-        prefix = ''
-        if y % 2 == 0:
-            prefix = '02'
-        else:
-            prefix = '03'
-        return prefix + hex(x)[2:]
-
-    def decompress_public_key(self, compressed_key: str) -> tuple:
-        '''
-        Will retrieve the public key point on the curve.
-        Compressed_key will be a Hex string
-        '''
-        prefix = int(compressed_key[0:2], 16)
-        x = int(compressed_key[2:], 16)
-        assert self.is_x_on_curve(x)
-        candidate_y = self.find_y_from_x(x)
-        if candidate_y % 2 == prefix % 2:
-            y = candidate_y
-        else:
-            y = self.p - candidate_y
-        assert self.is_on_curve((x, y))
-        return (x, y)

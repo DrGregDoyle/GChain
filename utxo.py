@@ -1,153 +1,220 @@
 '''
-The UTXO Class
+The UTXO classes
 
-We will use hex strings in order to track byte count.
-All hex char's can be expressed uniquely using 4 bits
-Hence 2 hex characters = 1 byte
+We divide the UTXO into two classes: UTXO_INPUT, UTXO_OUTPUT.
 
+The UTXO_INPUT has the following fields w corresponding size:
 
-Hence:
-
-Bit size    | Byte Size     | hex characters        | field
-===========================================================
-256         | 32            | 64                   | tx_id
-32          | 4             | 8                    | tx_index
-64          | 8             | 16                   | script_length
-var         | var           | var                  | signature_script
-32          | 4             | 8                    | sequence
+#|  field       |   bit size    |   hex chars   |   byte size       |#
+#====================================================================#
+#|  tx_id       |   256         |   64          |   32              |#
+#|  tx_index    |   32          |   8           |   4               |#
+#|  sig_length  |   var         |   var         |   var             |#
+#|  signature   |   var         |   var         |   var             |#
+#|  sequence    |   32          |   8           |   4               |#
+#====================================================================#
 
 
-#TODO: Change script_length to variable length integer
-Variable length integer:
+The UTXO_OUTPUT has the following fields w corresponding size:
 
-The way the variable length integer works is:
-    Look at the first byte
-    If that first byte is less than 253, use the byte literally
-    If that first byte is 253, read the next two bytes as a little endian 16-bit number (total bytes read = 3)
-    If that first byte is 254, read the next four bytes as a little endian 32-bit number (total bytes read = 5)
-    If that first byte is 255, read the next eight bytes as a little endian 64-bit number (total bytes read = 9)
-'''
-
-'''Imports'''
-from hashlib import sha256
-import secrets
+#|  field       |   bit size    |   hex chars   |   byte size       |#
+#====================================================================#
+#|  amount      |   32          |   8           |   4               |#
+#|  unlock_len  |   var         |   var         |   var             |#
+#|unlock_script |   var         |   var         |   var             |#
+#====================================================================#
 
 
-class UTXO:
-    '''
-    Class Vars. Hardcoded for now
-    '''
-    TRANSACTION_BYTES = 32
-    INDEX_BYTES = 4
-    LENGTH_BYTES = 8
-    SEQUENCE_BYTES = 4
-
-    def __init__(self, tx_id: str, tx_index: int, signature_script: str, sequence: int):
-        self.tx_id = tx_id
-        self.tx_index = format(tx_index, f'0{2 * self.INDEX_BYTES}x')
-
-        '''If the hex string has odd parity, it won't be an even number of bytes'''
-        '''Prepend 0 if hex string has odd length. This yields full byte count'''
-        if len(signature_script) % 2 == 1:
-            signature_script = '0' + signature_script
-        self.signature_script = signature_script
-
-        self.script_length = format(len(self.signature_script) // 2, f'0{2 * self.LENGTH_BYTES}x')
-        self.sequence = format(sequence, f'0{2 * self.SEQUENCE_BYTES}x')
-
-    def get_raw_utxo(self):
-        return self.tx_id + self.tx_index + self.script_length + self.signature_script + self.sequence
-
-    def get_hex_chars(self):
-        return len(self.get_raw_utxo())
-
-    def consume_output(self):
-        pass
-
-
-class OUTPUT_UTXO:
-    AMOUNT_BYTES = 8
-    LENGTH_BYTES = 8
-
-    def __init__(self, amount: int, unlock_script: str):
-        '''
-        The amount is the amount owned.
-        The unlock script contains the address
-        '''
-        self.amount = format(amount, f'0{2 * self.AMOUNT_BYTES}x')
-        '''Handle odd script parity for full byte count'''
-        if len(unlock_script) % 2 == 1:
-            unlock_script = '0' + unlock_script
-        self.unlock_script = unlock_script
-
-        self.script_length = format(len(self.unlock_script) // 2, f'0{2 * self.LENGTH_BYTES}x')
-
-    def get_raw_output(self):
-        return self.amount + self.script_length + self.unlock_script
-
-    def get_hex_chars(self):
-        return len(self.get_raw_output())
-
+NB: Both sig_length and unlock_len will be the length in BYTES
 
 '''
-Unpack
+
+
+class UTXO_INPUT:
+    '''
+
+    '''
+    TX_ID_BITS = 256
+    TX_INDEX_BITS = 32
+    SEQUENCE_BITS = 32
+
+    def __init__(self, tx_id: str, tx_index: int, signature: str, sequence=0xffffffff):
+        # Format transaction id, index and sequence
+        self.tx_id = format(int(tx_id, 16), f'0{self.TX_ID_BITS // 4}x')
+        self.tx_index = format(tx_index, f'0{self.TX_INDEX_BITS // 4}x')
+        self.sequence = format(sequence, f'0{self.SEQUENCE_BITS // 4}x')
+
+        # Get signature length from number of hex chars
+        self.signature = signature
+        if len(self.signature) % 2 == 1:
+            self.signature = '0' + self.signature
+
+        # Use variable length integer for byte length of signature
+        byte_length = len(self.signature) // 2
+        if byte_length < pow(2, 8) - 3:
+            self.sig_length = format(byte_length, '02x')
+        elif pow(2, 8) - 3 <= byte_length <= pow(2, 16):
+            self.sig_length = 'FD' + format(byte_length, '04x')
+        elif pow(2, 16) < byte_length <= pow(2, 32):
+            self.sig_length = 'FE' + format(byte_length, '08x')
+        else:
+            self.sig_length = 'FF' + format(byte_length, '016x')
+
+    '''
+    Properties
+    '''
+
+    @property
+    def raw_utxo(self):
+        return self.tx_id + self.tx_index + self.sig_length + self.signature + self.sequence
+
+    @property
+    def byte_size(self):
+        return len(self.raw_utxo) // 2
+
+
+class UTXO_OUTPUT:
+    '''
+
+    '''
+    AMOUNT_BITS = 32
+
+    def __init__(self, amount: int, locking_script: str):
+        # Format amount
+        self.amount = format(amount, f'0{self.AMOUNT_BITS // 4}x')
+
+        # Make sure locking script has full number of bytes
+        self.locking_script = locking_script
+        if len(self.locking_script) % 2 == 1:
+            self.locking_script = '0' + self.locking_script
+
+        # Use variable length integer for byte length of signature
+        byte_length = len(self.locking_script) // 2
+        if byte_length < pow(2, 8) - 3:
+            self.script_length = format(byte_length, '02x')
+        elif pow(2, 8) - 3 <= byte_length <= pow(2, 16):
+            self.script_length = 'FD' + format(byte_length, '04x')
+        elif pow(2, 16) < byte_length <= pow(2, 32):
+            self.script_length = 'FE' + format(byte_length, '08x')
+        else:
+            self.script_length = 'FF' + format(byte_length, '016x')
+
+    '''
+    Properties
+    '''
+
+    @property
+    def raw_utxo(self):
+        return self.amount + self.script_length + self.locking_script
+
+    @property
+    def byte_size(self):
+        return len(self.raw_utxo) // 2
+
+
+'''
+DECODE RAW UTXOS
 '''
 
 
-def decode_raw_utxo(raw_utxo: str, TRANSACTION_BYTES=32, INDEX_BYTES=4, LENGTH_BYTES=8, SEQUENCE_BYTES=4):
+def decode_raw_input_utxo(input_utxo: str):
     '''
-    We read in the hex strings and create the corresponding UTXO
+    The string will be given in hex characters and the UTXO_INPUT constants are bit sizes.
+    Divide the bit size by 4 to get the number of hex characters
     '''
-    index1 = TRANSACTION_BYTES * 2
-    index2 = index1 + INDEX_BYTES * 2
-    index3 = index2 + LENGTH_BYTES * 2
+    # Create known indices first
+    index1 = UTXO_INPUT.TX_ID_BITS // 4
+    index2 = index1 + UTXO_INPUT.TX_INDEX_BITS // 4
 
-    tx_id = raw_utxo[0:index1]
-    tx_index = int(raw_utxo[index1:index2], 16)
-    script_length = int(raw_utxo[index2:index3], 16)
+    # Get the hash and index
+    tx_id = input_utxo[:index1]
+    tx_index = int(input_utxo[index1:index2], 16)
 
-    index4 = index3 + 2 * script_length
-    index5 = index4 + 2 * SEQUENCE_BYTES
+    # Get the variable length integer
+    first_byte = int(input_utxo[index2:index2 + 2], 16)
+    sig_length = first_byte
+    if first_byte < 253:
+        index3 = index2 + 2
+    elif first_byte == 253:
+        sig_length = int(input_utxo[index2 + 2:index2 + 4], 16)
+        index3 = index2 + 4
+    elif first_byte == 254:
+        sig_length = int(input_utxo[index2 + 2:index2 + 8], 16)
+        index3 = index2 + 8
+    else:
+        assert first_byte == 255
+        sig_length = int(input_utxo[index2 + 2:index2 + 16], 16)
+        index3 = index2 + 16
 
-    signature_script = raw_utxo[index3: index4]
-    sequence = int(raw_utxo[index4:index5], 16)
+    # Get the signature
+    index4 = index3 + sig_length * 2
+    signature = input_utxo[index3:index4]
 
-    return UTXO(tx_id, tx_index, signature_script, sequence)
+    # Finally get the sequence
+    sequence = int(input_utxo[index4:index4 + UTXO_INPUT.SEQUENCE_BITS // 4], 16)
+
+    # Create the utxo
+    new_utxo = UTXO_INPUT(tx_id, tx_index, signature, sequence)
+
+    # Verify the sig_length
+    assert int(new_utxo.sig_length, 16) == sig_length
+
+    # Return assembled utxo object
+    return new_utxo
 
 
-def decode_raw_output(raw_output: str, AMOUNT_BYTES=8, LENGTH_BYTES=8):
+def decode_raw_output_utxo(output_utxo: str):
     '''
-    We read in the hex string and create the output utxo
+    The string will be hex chars and the BIT sizes that aren't variable are in the UTXO_OUTPUT class
+    Divide bit size by 4 to get hex chars
     '''
+    # Get amount val
+    index1 = UTXO_OUTPUT.AMOUNT_BITS // 4
+    amount = int(output_utxo[0:index1], 16)
 
-    index1 = 2 * AMOUNT_BYTES
-    index2 = index1 + 2 * LENGTH_BYTES
+    # Get variable length integer
+    first_byte = int(output_utxo[index1:index1 + 2], 16)
+    script_length = first_byte
+    if first_byte < 253:
+        index2 = index1 + 2
+    elif first_byte == 253:
+        script_length = int(output_utxo[index1 + 2:index1 + 4], 16)
+        index2 = index1 + 4
+    elif first_byte == 254:
+        script_length = int(output_utxo[index1 + 2:index1 + 8], 16)
+        index2 = index1 + 8
+    else:
+        assert first_byte == 255
+        script_length = int(output_utxo[index1 + 2:index1 + 16], 16)
+        index2 = index1 + 16
 
-    amount = int(raw_output[0:index1], 16)
-    script_length = int(raw_output[index1:index2], 16)
+    # Get the locking script
+    index3 = index2 + script_length * 2
+    locking_script = output_utxo[index2: index3]
 
-    index3 = index2 + 2 * script_length
+    # Create the utxo
+    new_utxo = UTXO_OUTPUT(amount, locking_script)
 
-    unlock_script = raw_output[index2:index3]
+    # Verify the script length
+    assert int(new_utxo.script_length, 16) == script_length
 
-    return OUTPUT_UTXO(amount, unlock_script)
+    # Return utxo output object
+    return new_utxo
 
 
 '''
 TESTING
 '''
+from hashlib import sha256
+from wallet import Wallet
 
 
 def test():
-    tx_id = sha256('Transaction'.encode()).hexdigest()
-    tx_index = 0
-    sig_script = sha256('SignatureScript'.encode()).hexdigest()
-    utxo = UTXO(tx_id, tx_index, sig_script)
-    return utxo
+    w = Wallet()
+    hash = sha256('hash'.encode()).hexdigest()
+    sig = w.sign_transaction(hash)
 
-
-def output_test():
-    amount = 10
-    unlock_script = hex(secrets.randbits(320))[2:]
-    output = OUTPUT_UTXO(amount, unlock_script)
-    return output
+    input1 = UTXO_INPUT(hash, 0, sig)
+    locking_script = w.compressed_public_key
+    output1 = UTXO_OUTPUT(10, locking_script)
+    return output1
