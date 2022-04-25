@@ -1,5 +1,5 @@
 '''
-The UTXO Classes
+The UTXO classes
 
 We divide the UTXO into two classes: UTXO_INPUT, UTXO_OUTPUT.
 
