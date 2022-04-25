@@ -14,6 +14,8 @@ The Transaction will contain the following fields with assigned sizes:
 
 
 '''
+import random
+import string
 
 '''
 IMPORTS
@@ -171,3 +173,30 @@ def decode_raw_transaction(raw_tx: str):
 
     # Return transaction
     return new_transaction
+
+
+'''
+TESTING
+'''
+from wallet import Wallet
+
+
+def generate_transaction():
+    '''
+    We generate a random transaction
+    '''
+    w1 = Wallet()
+
+    amount = secrets.randbelow(pow(2, 20))
+    output_utxo1 = UTXO_OUTPUT(amount, w1.compressed_public_key)
+
+    random_string = random.choice(string.ascii_letters)
+
+    tx_id = sha256(random_string.encode()).hexdigest()
+    index = secrets.randbelow(pow(2, 10))
+    sig = w1.sign_transaction(tx_id)
+    input_utxo1 = UTXO_INPUT(tx_id, index, sig)
+
+    new_transaction = Transaction([input_utxo1.raw_utxo], [output_utxo1.raw_utxo])
+    return new_transaction
+
