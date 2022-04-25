@@ -183,23 +183,46 @@ def decode_raw_transaction(raw_tx: str) -> Transaction:
 TESTING
 '''
 from wallet import Wallet
+import numpy as np
 
 
 def generate_transaction():
     '''
     We generate a random transaction
     '''
-    w1 = Wallet()
 
-    amount = secrets.randbelow(pow(2, 20))
-    output_utxo1 = UTXO_OUTPUT(amount, w1.compressed_public_key)
+    # Generate a non-zero random number of inputs
+    inputs = []
+    input_num = 0
+    while input_num == 0:
+        input_num = np.random.randint(10)
 
-    random_string = random.choice(string.ascii_letters)
+    for i in range(0, input_num):
+        w = Wallet()
+        string_length = 0
+        while string_length == 0:
+            string_length = np.random.randint(256)
+        random_string = ''
+        for s in range(0, string_length):
+            random_string += random.choice(string.ascii_letters)
 
-    tx_id = sha256(random_string.encode()).hexdigest()
-    index = secrets.randbelow(pow(2, 10))
-    sig = w1.sign_transaction(tx_id)
-    input_utxo1 = UTXO_INPUT(tx_id, index, sig)
+        tx_id = sha256(random_string.encode()).hexdigest()
+        index = secrets.randbelow(pow(2, 10))
+        sig = w.sign_transaction(tx_id)
+        input_utxo = UTXO_INPUT(tx_id, index, sig)
+        inputs.append(input_utxo.raw_utxo)
 
-    new_transaction = Transaction([input_utxo1.raw_utxo], [output_utxo1.raw_utxo])
+    # Generate a non-zero random number of outputs
+    outputs = []
+    output_num = 0
+    while output_num == 0:
+        output_num = np.random.randint(10)
+
+    for t in range(0, output_num):
+        w1 = Wallet()
+        amount = secrets.randbelow(pow(2, 20))
+        output_utxo = UTXO_OUTPUT(amount, w1.compressed_public_key)
+        outputs.append(output_utxo.raw_utxo)
+
+    new_transaction = Transaction(inputs, outputs)
     return new_transaction

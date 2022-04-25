@@ -31,7 +31,10 @@ class Miner:
         while int(test_block.id, 16) > target and self.is_mining:
             test_block.increase_nonce()
 
-        return test_block.raw_block
+        if self.is_mining:
+            return test_block.raw_block
+        else:
+            return ''
 
     def stop_mining(self):
         self.is_mining = False
