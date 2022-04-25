@@ -100,13 +100,17 @@ class Transaction:
     def id(self):
         return sha256(self.raw_transaction.encode()).hexdigest()
 
+    @property
+    def byte_size(self):
+        return len(self.raw_transaction) // 2
+
 
 '''
 Decoding
 '''
 
 
-def decode_raw_transaction(raw_tx: str):
+def decode_raw_transaction(raw_tx: str) -> Transaction:
     '''
     We decode the raw transaction using the raw_tx string and bit constants.
     '''
@@ -199,4 +203,3 @@ def generate_transaction():
 
     new_transaction = Transaction([input_utxo1.raw_utxo], [output_utxo1.raw_utxo])
     return new_transaction
-
