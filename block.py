@@ -103,6 +103,10 @@ class Block:
     def tx_ids(self):
         return self.hashlist(self.transactions)
 
+    @property
+    def id(self):
+        return sha256(self.raw_block.encode()).hexdigest()
+
     '''
     MERKLE ROOT
     '''
@@ -194,6 +198,17 @@ class Block:
         else:
             return None
 
+    '''
+    INCREASE NONCE
+    '''
+
+    def increase_nonce(self):
+        '''
+        Will increase the given nonce value by 1
+        '''
+        current_nonce = int(self.nonce, 16)
+        self.nonce = format(current_nonce + 1, f'0{self.NONCE_BITS // 4}x')
+
 
 '''
 DECODING 
@@ -204,17 +219,27 @@ def decode_raw_block(raw_block: str):
     '''
     The Header size will be fixed. We get the Header dict, then the transactions list and return a Block
     '''
+
+    # Get number of hex chars
     header_hexchars = (Block.VERSION_BITS + Block.PREV_HASH_BITS + Block.MERKLE_ROOT_BITS
                        + Block.TIMESTAMP_BITS + Block.TARGET_BITS + Block.NONCE_BITS) // 4
+
+    # Break up string into header and transaction
     header_string = raw_block[:header_hexchars]
     transaction_string = raw_block[header_hexchars:]
 
+    # Decode the raw header and raw transaction
     header_dict = decode_raw_header(header_string)
     transactions = decode_raw_block_transactions(transaction_string)
 
+    # Create the block
     new_block = Block(header_dict['version'], header_dict['prev_hash'], header_dict['target'], header_dict['nonce'],
                       transactions=transactions, timestamp=header_dict['timestamp'])
+
+    # Verify block construction
     assert new_block.merkle_root == header_dict['merkle_root']
+
+    # Return block
     return new_block
 
 
@@ -222,6 +247,7 @@ def decode_raw_header(raw_hdr: str):
     '''
     We read in the header and return a dict
     '''
+    # Determine block indices
     index1 = Block.VERSION_BITS // 4
     index2 = index1 + Block.PREV_HASH_BITS // 4
     index3 = index2 + Block.MERKLE_ROOT_BITS // 4
@@ -229,6 +255,7 @@ def decode_raw_header(raw_hdr: str):
     index5 = index4 + Block.TARGET_BITS // 4
     index6 = index5 + Block.NONCE_BITS // 4
 
+    # Get variables from string in proper type
     version = int(raw_hdr[:index1], 16)
     prev_hash = raw_hdr[index1:index2]
     merkle_root = raw_hdr[index2:index3]
@@ -236,6 +263,7 @@ def decode_raw_header(raw_hdr: str):
     target = int(raw_hdr[index4:index5], 16)
     nonce = int(raw_hdr[index5:index6], 16)
 
+    # Return dictionary with corresponding values
     return {"version": version, "prev_hash": prev_hash, "merkle_root": merkle_root, "timestamp": timestamp,
             "target": target, "nonce": nonce}
 
@@ -285,3 +313,25 @@ def utc_to_seconds():
 def seconds_to_utc(seconds: int):
     date_object = datetime.datetime.utcfromtimestamp(seconds)
     return date_object.isoformat()
+
+
+'''
+TESTING
+'''
+from transaction import generate_transaction
+
+
+def generate_test_block(bit_target=20):
+    '''
+    We generate a test block
+    '''
+    tx_hash = sha256('tx_hash'.encode()).hexdigest()
+    tx = []
+    for x in range(0, 3):
+        tx.append(generate_transaction().raw_transaction)
+
+    version = 1
+    target = bit_target
+    nonce = 0
+    new_block = Block(version, tx_hash, target, nonce, tx)
+    return new_block
