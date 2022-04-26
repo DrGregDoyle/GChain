@@ -32,8 +32,12 @@ class Miner:
             test_block.increase_nonce()
 
         if self.is_mining:
+            # Logging
+            print('Successfully Mined new block')
             return test_block.raw_block
         else:
+            # Logging
+            print('Interrupt received by Miner')
             return ''
 
     def stop_mining(self):
