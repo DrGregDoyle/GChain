@@ -9,6 +9,7 @@ from block import decode_raw_block, Block
 import pandas as pd
 from transaction import decode_raw_transaction
 from utxo import decode_raw_input_utxo, decode_raw_output_utxo
+from wallet import verify_signature, get_public_key_point
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -43,6 +44,10 @@ class Blockchain:
         else:
             return self.chain[-1]
 
+    @property
+    def height(self):
+        return len(self.chain) - 1
+
     '''
     ADD BLOCK
     '''
@@ -76,13 +81,19 @@ class Blockchain:
         raw_tx_list = candidate_block.transactions
         for raw in raw_tx_list:
             new_transaction = decode_raw_transaction(raw)
-            # for i in new_transaction.inputs:
-            #     # Consume output utxo's
-            #     tx_id = i.tx_id
-            #     tx_index = i.tx_index
-            #     signature = i.signature
-            #     ouput_utxo_row = self.utxos.loc[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
-            #     print(ouput_utxo_row)
+            for i in new_transaction.inputs:
+                # Consume output utxo's
+                tx_id = i.tx_id
+                tx_index = int(i.tx_index, 16)
+                input_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
+                if not input_index.empty:
+                    # Validate input
+                    locking_script = self.utxos.loc[input_index]['locking_script'].values[0]
+                    pk_point = get_public_key_point(locking_script)
+                    sig = i.signature
+                    # Consume utxo if signatures match
+                    if verify_signature(sig, tx_id, pk_point):
+                        self.utxos = self.utxos.drop(self.utxos.index[input_index])
 
             first_byte = int(new_transaction.output_num[0:2], 16)
             output_num = first_byte
@@ -107,3 +118,10 @@ class Blockchain:
         # Add block
         self.chain.append(candidate_block.raw_block)
         return True
+
+
+'''
+TESTING
+'''
+from block import generate_test_block
+from miner import Miner
