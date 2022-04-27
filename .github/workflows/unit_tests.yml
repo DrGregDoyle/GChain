@@ -43,3 +43,4 @@ jobs:
         pytest -rA ./unit_tests/test_utxo.py
         pytest -rA ./unit_tests/test_transaction.py
         pytest -rA ./unit_tests/test_block.py
+        pytest -rA ./unit_tests/test_blockchain.py
