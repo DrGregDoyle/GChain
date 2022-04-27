@@ -209,6 +209,17 @@ class Block:
         current_nonce = int(self.nonce, 16)
         self.nonce = format(current_nonce + 1, f'0{self.NONCE_BITS // 4}x')
 
+    '''
+    RETRIEVE TX BY ID
+    '''
+
+    def get_raw_tx(self, tx_id: str):
+        try:
+            index = self.tx_ids.index(tx_id)
+        except TypeError:
+            return ''
+        return self.transactions[index]
+
 
 '''
 DECODING 

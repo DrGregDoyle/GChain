@@ -52,7 +52,7 @@ class Blockchain:
     ADD BLOCK
     '''
 
-    def add_block(self, raw_block: str):
+    def add_block(self, raw_block: str) -> bool:
         '''
 
         '''
@@ -119,9 +119,58 @@ class Blockchain:
         self.chain.append(candidate_block.raw_block)
         return True
 
+    '''
+    POP BLOCK
+    '''
 
-'''
-TESTING
-'''
-from block import generate_test_block
-from miner import Miner
+    def pop_block(self) -> bool:
+        '''
+        This will remove the top most block in the chain.
+        We reverse the utxo's in the block.
+        '''
+        removed_block = decode_raw_block(self.chain.pop(-1))
+
+        # For each transaction, we remove the output utxos from the db and restore the related inputs
+        for t in removed_block.transactions:
+            tx = decode_raw_transaction(t)
+            id = tx.id
+            output_count = 0
+
+            # Drop all utxo outputs
+            for t in tx.outputs:
+                output_index = self.utxos.index[(self.utxos['tx_id'] == id) & (self.utxos['tx_index'] == output_count)]
+                try:
+                    assert not output_index.empty, 'Pop block error, output utxo already consumed'
+                except AssertionError as msg:
+                    # Logging
+                    print(msg)
+                    return False
+                self.utxos = self.utxos.drop(self.utxos.index[output_index])
+                output_count += 1
+
+            # Restore all outputs for the inputs
+            for i in tx.inputs:
+                tx_id = i.tx_id
+                tx_index = int(i.tx_index, 16)
+                raw_tx = ''
+                count = 0
+                while raw_tx == '':
+                    temp_block = decode_raw_block(self.chain[count])
+                    raw_tx = temp_block.get_raw_tx(tx_id)
+                    count += 1
+                temp_tx = decode_raw_transaction(raw_tx)
+                temp_output = temp_tx.outputs[tx_index]
+                temp_amount = int(temp_output.amount, 16)
+                temp_lockstring = temp_output.locking_script
+                row = pd.DataFrame([[tx_id, tx_index, temp_amount, temp_lockstring]], columns=self.COLUMNS)
+                self.utxos = pd.concat([self.utxos, row], ignore_index=True)
+
+        return True
+
+    '''
+    TESTING
+    '''
+
+    def add_output_row(self, tx_id: str, tx_index: int, amount: int, locking_script: str):
+        row = pd.DataFrame([[tx_id, tx_index, amount, locking_script]], columns=self.COLUMNS)
+        self.utxos = pd.concat([self.utxos, row], ignore_index=True)
