@@ -1,0 +1,11 @@
+GCHain stories:
+
+
+001: Create an "epoch-seconds" datetime converter for the Block - Check (25min)
+002: Create a unit test for the epoch-seconds datetime converter. - Check(<5min)
+003: Finish formatting Block - check (10min)
+004: Create RAW block property - check
+005: Create decode header - check
+006: Create decode transactions - check
+007: Create decode Block - check
+008: Create unit test for block decoding - check
