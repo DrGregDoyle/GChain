@@ -9,7 +9,7 @@ The UTXO_INPUT has the following fields w corresponding size:
 #====================================================================#
 #|  tx_id       |   256         |   64          |   32              |#
 #|  tx_index    |   32          |   8           |   4               |#
-#|  sig_length  |   var         |   var         |   var             |#
+#|  sig_length  |   VLI         |   VLI         |   VLI             |#
 #|  signature   |   var         |   var         |   var             |#
 #|  sequence    |   32          |   8           |   4               |#
 #====================================================================#
@@ -20,7 +20,7 @@ The UTXO_OUTPUT has the following fields w corresponding size:
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
 #|  amount      |   32          |   8           |   4               |#
-#|  unlock_len  |   var         |   var         |   var             |#
+#|  unlock_len  |   VLI         |   VLI         |   VLI             |#
 #|unlock_script |   var         |   var         |   var             |#
 #====================================================================#
 
@@ -28,6 +28,10 @@ The UTXO_OUTPUT has the following fields w corresponding size:
 NB: Both sig_length and unlock_len will be the length in BYTES
 
 '''
+'''
+IMPORTS
+'''
+from vli import VLI
 
 
 class UTXO_INPUT:
@@ -51,14 +55,7 @@ class UTXO_INPUT:
 
         # Use variable length integer for byte length of signature
         byte_length = len(self.signature) // 2
-        if byte_length < pow(2, 8) - 3:
-            self.sig_length = format(byte_length, '02x')
-        elif pow(2, 8) - 3 <= byte_length <= pow(2, 16):
-            self.sig_length = 'FD' + format(byte_length, '04x')
-        elif pow(2, 16) < byte_length <= pow(2, 32):
-            self.sig_length = 'FE' + format(byte_length, '08x')
-        else:
-            self.sig_length = 'FF' + format(byte_length, '016x')
+        self.sig_length = VLI(byte_length).vli_string
 
     '''
     Properties
@@ -71,6 +68,10 @@ class UTXO_INPUT:
     @property
     def byte_size(self):
         return len(self.raw_utxo) // 2
+
+    @property
+    def index_as_int(self):
+        return int(self.tx_index, 16)
 
 
 class UTXO_OUTPUT:
@@ -90,14 +91,7 @@ class UTXO_OUTPUT:
 
         # Use variable length integer for byte length of signature
         byte_length = len(self.locking_script) // 2
-        if byte_length < pow(2, 8) - 3:
-            self.script_length = format(byte_length, '02x')
-        elif pow(2, 8) - 3 <= byte_length <= pow(2, 16):
-            self.script_length = 'FD' + format(byte_length, '04x')
-        elif pow(2, 16) < byte_length <= pow(2, 32):
-            self.script_length = 'FE' + format(byte_length, '08x')
-        else:
-            self.script_length = 'FF' + format(byte_length, '016x')
+        self.script_length = VLI(byte_length).vli_string
 
     '''
     Properties
@@ -110,6 +104,10 @@ class UTXO_OUTPUT:
     @property
     def byte_size(self):
         return len(self.raw_utxo) // 2
+
+    @property
+    def amount_as_int(self):
+        return int(self.amount, 16)
 
 
 '''
@@ -132,19 +130,14 @@ def decode_raw_input_utxo(input_utxo: str):
 
     # Get the variable length integer
     first_byte = int(input_utxo[index2:index2 + 2], 16)
-    sig_length = first_byte
+    temp_index = index2 + 2
     if first_byte < 253:
-        index3 = index2 + 2
-    elif first_byte == 253:
-        sig_length = int(input_utxo[index2 + 2:index2 + 4], 16)
-        index3 = index2 + 4
-    elif first_byte == 254:
-        sig_length = int(input_utxo[index2 + 2:index2 + 8], 16)
-        index3 = index2 + 8
+        sig_length = first_byte
+        index3 = temp_index
     else:
-        assert first_byte == 255
-        sig_length = int(input_utxo[index2 + 2:index2 + 16], 16)
-        index3 = index2 + 16
+        vli_adjust = VLI.first_byte_index(first_byte)
+        index3 = temp_index + vli_adjust
+        sig_length = int(input_utxo[temp_index:index3], 16)
 
     # Get the signature
     index4 = index3 + sig_length * 2
@@ -174,19 +167,14 @@ def decode_raw_output_utxo(output_utxo: str):
 
     # Get variable length integer
     first_byte = int(output_utxo[index1:index1 + 2], 16)
-    script_length = first_byte
+    temp_index = index1 + 2
     if first_byte < 253:
-        index2 = index1 + 2
-    elif first_byte == 253:
-        script_length = int(output_utxo[index1 + 2:index1 + 4], 16)
-        index2 = index1 + 4
-    elif first_byte == 254:
-        script_length = int(output_utxo[index1 + 2:index1 + 8], 16)
-        index2 = index1 + 8
+        script_length = first_byte
+        index2 = temp_index
     else:
-        assert first_byte == 255
-        script_length = int(output_utxo[index1 + 2:index1 + 16], 16)
-        index2 = index1 + 16
+        vli_adjust = VLI.first_byte_index(first_byte)
+        index2 = temp_index + vli_adjust
+        script_length = int(output_utxo[temp_index:index2], 16)
 
     # Get the locking script
     index3 = index2 + script_length * 2

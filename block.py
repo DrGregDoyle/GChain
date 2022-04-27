@@ -25,6 +25,7 @@ The RAW block will be the hex strings of the header, followed by the tx_num VLI 
 
 '''Imports'''
 from hashlib import sha256
+from vli import VLI
 import datetime
 from transaction import decode_raw_transaction, Transaction
 
@@ -71,14 +72,7 @@ class Block:
 
         # Calculate VLI based on number of transactions
         tx_count = len(self.transactions)
-        if tx_count < pow(2, 8) - 3:
-            self.tx_count = format(tx_count, '02x')
-        elif pow(2, 8) - 3 <= tx_count <= pow(2, 16):
-            self.tx_count = 'FD' + format(tx_count, '04x')
-        elif pow(2, 16) < tx_count <= pow(2, 32):
-            self.tx_count = 'FE' + format(tx_count, '08x')
-        else:
-            self.tx_count = 'FF' + format(tx_count, '016x')
+        self.tx_count = VLI(tx_count).vli_string
 
     '''
     PROPERTIES
@@ -281,23 +275,18 @@ def decode_raw_header(raw_hdr: str):
 
 def decode_raw_block_transactions(raw_block_tx: str) -> list:
     '''
-    We will take in the raw block transactions, construct a new transaction, verify it's construction, then save the raw_transaction
+    We will take in the raw block transactions, construct a new transaction, verify its construction, then save the raw_transaction
     '''
     # Get number of transactions
-    first_byte = int(raw_block_tx[0:2], 16)
-    input_num = first_byte
+    first_byte = int(raw_block_tx[:2], 16)
+    temp_index = 2
     if first_byte < 253:
-        tx_index = 2
-    elif first_byte == 253:
-        input_num = int(raw_block_tx[2:4], 16)
-        tx_index = 4
-    elif first_byte == 254:
-        input_num = int(raw_block_tx[2:8], 16)
-        tx_index = 8
+        input_num = first_byte
+        tx_index = temp_index
     else:
-        assert first_byte == 255
-        input_num = int(raw_block_tx[2:16], 16)
-        tx_index = 16
+        vli_adjust = VLI.first_byte_index(first_byte)
+        tx_index = temp_index + vli_adjust
+        input_num = int(raw_block_tx[temp_index:tx_index], 16)
 
     # Read in transactions
     transactions = []
