@@ -13,7 +13,7 @@ from cryptography import EllipticCurve
 from miner import Miner
 from transaction import Transaction, decode_raw_transaction
 from utxo import UTXO_OUTPUT, UTXO_INPUT, decode_raw_input_utxo, decode_raw_output_utxo
-from wallet import Wallet, verify_signature, get_public_key_point
+from wallet import Wallet
 import threading
 from hashlib import sha256
 import numpy as np
@@ -37,9 +37,6 @@ class Node:
 
         # Create Miner
         self.miner = Miner()
-
-        # Create curve
-        self.curve = EllipticCurve(a, b, p)
 
         # Create local wallet if none used during instantiation
         if wallet is None:
@@ -67,6 +64,10 @@ class Node:
     @property
     def utxos(self):
         return self.blockchain.utxos
+
+    @property
+    def curve(self):
+        return self.blockchain.curve
 
     '''
     MINER

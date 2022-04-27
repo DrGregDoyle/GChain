@@ -362,3 +362,78 @@ class EllipticCurve:
 
         # Return point
         return temp_point
+
+    '''
+    Verify Signature
+    '''
+
+    def verify_signature(self, signature: str, tx_hash: str, public_key_point: tuple) -> bool:
+        '''
+        Given a signature (r,s) and a transaction hash, we verify the signature against the Wallet's public key.
+        NB: The signature will be a 128-character hex string representing r + s
+
+
+        Algorithm
+        --------
+        Let n denote the group order of the elliptic curve wrt the Wallet.
+
+        1) Verify that n is prime and that (r,s) are integers in the interval [1,n-1]
+        2) Let Z be the integer value of the first n BITS of the transaction hash
+        3) Let u1 = Z * s^(-1) (mod n) and u2 = r * s^(-1) (mod n)
+        4) Calculate the curve point (x,y) = (u1 * generator) + (u2 * public_key)
+            (where * is scalar multiplication, and + is rational point addition mod p)
+        5) If r = x (mod n), the signature is valid.
+        '''
+
+        # 1) Verify our values first
+        assert self.has_prime_order
+        assert len(signature) == self.order.bit_length() // 2
+        n = self.order
+        r = int(signature[:self.order.bit_length() // 4], 16)
+        s = int(signature[self.order.bit_length() // 4:], 16)
+        assert 1 <= r <= n - 1
+        assert 1 <= s <= n - 1
+
+        # 2) Take the first n bits of the transaction hash
+        Z = int(bin(int(tx_hash, 16))[2:2 + n], 2)
+
+        # 3) Calculate u1 and u2
+        s_inv = pow(s, -1, n)
+        u1 = (Z * s_inv) % n
+        u2 = (r * s_inv) % n
+
+        # 4) Calculate the point
+        point = self.add_points(self.scalar_multiplication(u1, self.generator),
+                                self.scalar_multiplication(u2, public_key_point))
+
+        # 5) Return True/False based on x. Account for point at infinity.
+        if point is None:
+            return False
+        x, y = point
+        return r == x % n
+
+    '''
+    Recover Point
+    '''
+
+    def get_public_key_point(self, compressed_key: str):
+        '''
+        We retrieve the public key point from the compressed key
+        '''
+
+        # 1 - Get the parity of y and the x integer value
+        parity = int(compressed_key[:2], 16)
+        x_int = int(compressed_key[2:], 16)
+
+        # 3 - Get the y val
+        y_int = self.find_y_from_x(x_int)
+
+        # 4 - Make sure parity is correct
+        if y_int % 2 != parity % 2:
+            y_int = self.p - y_int
+
+        # 5 - Verify the point
+        assert self.is_on_curve((x_int, y_int))
+
+        # 6 - Return point
+        return (x_int, y_int)

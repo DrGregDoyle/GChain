@@ -9,7 +9,7 @@ from block import decode_raw_block, Block
 import pandas as pd
 from transaction import decode_raw_transaction
 from utxo import decode_raw_input_utxo, decode_raw_output_utxo
-from wallet import verify_signature, get_public_key_point
+from cryptography import EllipticCurve
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -25,13 +25,21 @@ class Blockchain:
     '''
     COLUMNS = ['tx_id', 'tx_index', 'amount', 'locking_script']
 
-    def __init__(self):
+    def __init__(self, a=None, b=None, p=None):
         '''
 
         '''
+        # Instantiate a blank chain
         self.chain = []
+
+        # Create an empty utxo pool
         self.utxos = pd.DataFrame(columns=self.COLUMNS)
+
+        # Create the encryption curve
+        self.curve = EllipticCurve(a, b, p)
+
         # Generate genesis block
+        # TODO: Create genesis block program
 
     '''
     PROPERTIES
@@ -89,10 +97,10 @@ class Blockchain:
                 if not input_index.empty:
                     # Validate input
                     locking_script = self.utxos.loc[input_index]['locking_script'].values[0]
-                    pk_point = get_public_key_point(locking_script)
+                    pk_point = self.curve.get_public_key_point(locking_script)
                     sig = i.signature
                     # Consume utxo if signatures match
-                    if verify_signature(sig, tx_id, pk_point):
+                    if self.curve.verify_signature(sig, tx_id, pk_point):
                         self.utxos = self.utxos.drop(self.utxos.index[input_index])
 
             first_byte = int(new_transaction.output_num[0:2], 16)

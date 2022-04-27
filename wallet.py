@@ -296,7 +296,7 @@ class Wallet:
                     h_s = '0' + h_s
 
                 sig = h_r + h_s
-                signed = verify_signature(sig, tx_hash, self.public_key_point)
+                signed = self.curve.verify_signature(sig, tx_hash, self.public_key_point)
 
         # 6) Return the signature (r,s) as the 128-character hex string r + s
         return sig
@@ -338,78 +338,3 @@ class Wallet:
             numeric_val = self.BASE58_LIST.index(base58_string[x:x + 1])
             sum += numeric_val * pow(58, len(base58_string) - x - 1)
         return sum
-
-
-'''
-VERIFY SIGNATURE
-'''
-
-
-def verify_signature(signature: str, tx_hash: str, public_key_point: tuple, a=None, b=None, p=None) -> bool:
-    '''
-    Given a signature (r,s) and a transaction hash, we verify the signature against the Wallet's public key.
-    NB: The signature will be a 128-character hex string representing r + s
-
-
-    Algorithm
-    --------
-    Let n denote the group order of the elliptic curve wrt the Wallet.
-
-    1) Verify that n is prime and that (r,s) are integers in the interval [1,n-1]
-    2) Let Z be the integer value of the first n BITS of the transaction hash
-    3) Let u1 = Z * s^(-1) (mod n) and u2 = r * s^(-1) (mod n)
-    4) Calculate the curve point (x,y) = (u1 * generator) + (u2 * public_key)
-        (where * is scalar multiplication, and + is rational point addition mod p)
-    5) If r = x (mod n), the signature is valid.
-    '''
-
-    # 1) Instantiate the curve
-    curve = EllipticCurve(a, b, p)
-
-    # 2) Verify our values first
-    assert curve.has_prime_order
-    assert len(signature) == curve.order.bit_length() // 2
-    n = curve.order
-    r = int(signature[:curve.order.bit_length() // 4], 16)
-    s = int(signature[curve.order.bit_length() // 4:], 16)
-    assert 1 <= r <= n - 1
-    assert 1 <= s <= n - 1
-
-    # 2) Take the first n bits of the transaction hash
-    Z = int(bin(int(tx_hash, 16))[2:2 + n], 2)
-
-    # 3) Calculate u1 and u2
-    s_inv = pow(s, -1, n)
-    u1 = (Z * s_inv) % n
-    u2 = (r * s_inv) % n
-
-    # 4) Calculate the point
-    point = curve.add_points(curve.scalar_multiplication(u1, curve.generator),
-                             curve.scalar_multiplication(u2, public_key_point))
-
-    # 5) Return True/False based on x. Account for point at infinity.
-    if point is None:
-        return False
-    x, y = point
-    return r == x % n
-
-
-def get_public_key_point(compressed_key: str, a=None, b=None, p=None):
-    '''
-    We retrieve the public key point from the compressed key
-    '''
-    # 1 - Create the elliptic curve
-    curve = EllipticCurve(a, b, p)
-
-    # 2 - Get the parity of y and the x integer value
-    parity = int(compressed_key[:2], 16)
-    x_int = int(compressed_key[2:], 16)
-
-    # 3 - Get the y val
-    candidate_y = curve.find_y_from_x(x_int)
-
-    # 4 - Check the parity
-    if candidate_y % 2 == parity % 2:
-        return (x_int, candidate_y)
-    else:
-        return (x_int, curve.p - candidate_y)
