@@ -39,8 +39,4 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       run: |
-        pytest -rA ./unit_tests/test_wallet.py
-        pytest -rA ./unit_tests/test_utxo.py
-        pytest -rA ./unit_tests/test_transaction.py
-        pytest -rA ./unit_tests/test_block.py
-        pytest -rA ./unit_tests/test_blockchain.py
+        pytest -rA 
