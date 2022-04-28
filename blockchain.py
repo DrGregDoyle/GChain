@@ -1,5 +1,7 @@
 '''
 The Blockchain class
+
+
 '''
 
 '''
@@ -8,8 +10,8 @@ IMPORTS
 from block import decode_raw_block, Block
 import pandas as pd
 from transaction import decode_raw_transaction
-from utxo import decode_raw_input_utxo, decode_raw_output_utxo
-from wallet import verify_signature, get_public_key_point
+from utxo import decode_raw_input_utxo, decode_raw_output_utxo, UTXO_INPUT, UTXO_OUTPUT
+from cryptography import EllipticCurve
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -25,13 +27,21 @@ class Blockchain:
     '''
     COLUMNS = ['tx_id', 'tx_index', 'amount', 'locking_script']
 
-    def __init__(self):
+    def __init__(self, a=None, b=None, p=None):
         '''
 
         '''
+        # Instantiate a blank chain
         self.chain = []
+
+        # Create an empty utxo pool
         self.utxos = pd.DataFrame(columns=self.COLUMNS)
+
+        # Create the encryption curve
+        self.curve = EllipticCurve(a, b, p)
+
         # Generate genesis block
+        # TODO: Create genesis block program
 
     '''
     PROPERTIES
@@ -49,6 +59,36 @@ class Blockchain:
         return len(self.chain) - 1
 
     '''
+    UTXO POOL
+    '''
+
+    def consume_input(self, utxo_input: UTXO_INPUT) -> bool:
+        '''
+        For a given UTXO_INPUT, we find the corresponding UTXO_OUTPUT.
+        We then validate the signature against the locking script.
+        If valid, we remove the output utxo from the utxo_pool and return True.
+        If validation fails we return False
+        '''
+
+        # Get tx_id and tx_index for output
+        tx_id = utxo_input.tx_id
+        tx_index = int(utxo_input.tx_index, 16)
+
+        # Find the output signature and public key point
+        output_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
+        locking_script = self.utxos.loc[output_index]['locking_script'].values[0]
+        pk_point = self.curve.get_public_key_point(locking_script)
+
+        # Validate the signature
+        valid = self.curve.verify_signature(utxo_input.signature, tx_id, pk_point)
+        if not valid:
+            return False
+
+        # Remove the output UTXO
+        self.utxos = self.utxos.drop(self.utxos.index[output_index])
+        return True
+
+    '''
     ADD BLOCK
     '''
 
@@ -60,8 +100,7 @@ class Blockchain:
         candidate_block = decode_raw_block(raw_block)
 
         # Verify target
-        target_bits = int(candidate_block.target, 16)
-        target = pow(2, 256 - target_bits)
+        target = pow(2, 256 - int(candidate_block.target, 16))
         try:
             assert int(candidate_block.id, 16) <= target, 'Target error in block'
         except AssertionError as msg:
@@ -89,10 +128,10 @@ class Blockchain:
                 if not input_index.empty:
                     # Validate input
                     locking_script = self.utxos.loc[input_index]['locking_script'].values[0]
-                    pk_point = get_public_key_point(locking_script)
+                    pk_point = self.curve.get_public_key_point(locking_script)
                     sig = i.signature
                     # Consume utxo if signatures match
-                    if verify_signature(sig, tx_id, pk_point):
+                    if self.curve.verify_signature(sig, tx_id, pk_point):
                         self.utxos = self.utxos.drop(self.utxos.index[input_index])
 
             first_byte = int(new_transaction.output_num[0:2], 16)

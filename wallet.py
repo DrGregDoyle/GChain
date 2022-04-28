@@ -4,27 +4,35 @@ The Wallet class
 -The wallet will generate ECC keys upon instantiation.
 -The address will be related to the locking/unlocking script used in the utxos
 
-###NOTE ON RIPEMD
+NOTE ON RIPEMD:
     -The ripemd only seems to work through the update function
     -This means for a proper hash, we need to generate a new ripemd160 hash object each time
 
 
-#TODO: Allow for dynamically generated addresses from the master keys
-#TODO: Pull a dictionary from a web api for the seed phrase
-#TODO: Add prefix mapping function for address creation - the prefix will tie into the locking/unlocking script
+TODO: Allow for dynamically generated addresses from the master keys
+
+TODO: Pull a dictionary from a web api for the seed phrase
+
+TODO: Add prefix mapping function for address creation - the prefix will tie into the locking/unlocking script
+
+TODO: Add the curve creation during instantiation depending on the connection to the blockchain. (Either that or
+have curve coeff pouches or something.)
+
 
 
 '''
-
-'''Imports'''
+'''
+IMPORTS
+'''
 import pandas as pd
 import secrets
-import math
 import hashlib
-from hashlib import sha256, sha512
+from hashlib import sha256, sha512, sha1
 from cryptography import EllipticCurve
 
-'''Wallet Class'''
+'''
+CLASS
+'''
 
 
 class Wallet:
@@ -206,7 +214,7 @@ class Wallet:
         '''
         Using the compressed public key of the wallet, we obtain our address as follows:
             1) Hash the compressed public key using sha256
-            2) Hash the result of 1) using ripemd160 - this yields a hex string with 40 characters
+            2) Hash the result of 1) using SHA-1 - this yields a hex string with 40 characters
             3) Prepend a 1-byte (2 hex) prefix to 2) - call this the versioned hash
             4) Sha256 hash the versioned hash twice - take the first "checksum_bits" bits and append to end of versioned hash
             5) Encode the versioned hash using base58 - encode the prefix separately as it will not necessarily map to the base58 value
@@ -215,10 +223,8 @@ class Wallet:
         # 1) Hash the compressed public key using sha256
         hash1 = sha256(self.compressed_public_key.encode()).hexdigest()
 
-        # 2) Hash 1) using ripemd160
-        ripemd160 = hashlib.new('ripemd160')
-        ripemd160.update(hash1.encode())
-        hash2 = ripemd160.hexdigest()
+        # 2) Hash 1) using sha-1
+        hash2 = sha1(hash1.encode()).hexdigest()
 
         # 3) Prepend a 1-byte prefix to 2)
         prefix = format(version, f'0{prefix_bits // 4}x')
@@ -274,6 +280,7 @@ class Wallet:
 
         # 3) Select a random integer k (Loop from here)
         signed = False
+        sig = None
         while not signed:
             k = secrets.randbelow(n)
 
@@ -296,7 +303,7 @@ class Wallet:
                     h_s = '0' + h_s
 
                 sig = h_r + h_s
-                signed = verify_signature(sig, tx_hash, self.public_key_point)
+                signed = self.curve.verify_signature(sig, tx_hash, self.public_key_point)
 
         # 6) Return the signature (r,s) as the 128-character hex string r + s
         return sig
@@ -338,78 +345,3 @@ class Wallet:
             numeric_val = self.BASE58_LIST.index(base58_string[x:x + 1])
             sum += numeric_val * pow(58, len(base58_string) - x - 1)
         return sum
-
-
-'''
-VERIFY SIGNATURE
-'''
-
-
-def verify_signature(signature: str, tx_hash: str, public_key_point: tuple, a=None, b=None, p=None) -> bool:
-    '''
-    Given a signature (r,s) and a transaction hash, we verify the signature against the Wallet's public key.
-    NB: The signature will be a 128-character hex string representing r + s
-
-
-    Algorithm
-    --------
-    Let n denote the group order of the elliptic curve wrt the Wallet.
-
-    1) Verify that n is prime and that (r,s) are integers in the interval [1,n-1]
-    2) Let Z be the integer value of the first n BITS of the transaction hash
-    3) Let u1 = Z * s^(-1) (mod n) and u2 = r * s^(-1) (mod n)
-    4) Calculate the curve point (x,y) = (u1 * generator) + (u2 * public_key)
-        (where * is scalar multiplication, and + is rational point addition mod p)
-    5) If r = x (mod n), the signature is valid.
-    '''
-
-    # 1) Instantiate the curve
-    curve = EllipticCurve(a, b, p)
-
-    # 2) Verify our values first
-    assert curve.has_prime_order
-    assert len(signature) == curve.order.bit_length() // 2
-    n = curve.order
-    r = int(signature[:curve.order.bit_length() // 4], 16)
-    s = int(signature[curve.order.bit_length() // 4:], 16)
-    assert 1 <= r <= n - 1
-    assert 1 <= s <= n - 1
-
-    # 2) Take the first n bits of the transaction hash
-    Z = int(bin(int(tx_hash, 16))[2:2 + n], 2)
-
-    # 3) Calculate u1 and u2
-    s_inv = pow(s, -1, n)
-    u1 = (Z * s_inv) % n
-    u2 = (r * s_inv) % n
-
-    # 4) Calculate the point
-    point = curve.add_points(curve.scalar_multiplication(u1, curve.generator),
-                             curve.scalar_multiplication(u2, public_key_point))
-
-    # 5) Return True/False based on x. Account for point at infinity.
-    if point is None:
-        return False
-    x, y = point
-    return r == x % n
-
-
-def get_public_key_point(compressed_key: str, a=None, b=None, p=None):
-    '''
-    We retrieve the public key point from the compressed key
-    '''
-    # 1 - Create the elliptic curve
-    curve = EllipticCurve(a, b, p)
-
-    # 2 - Get the parity of y and the x integer value
-    parity = int(compressed_key[:2], 16)
-    x_int = int(compressed_key[2:], 16)
-
-    # 3 - Get the y val
-    candidate_y = curve.find_y_from_x(x_int)
-
-    # 4 - Check the parity
-    if candidate_y % 2 == parity % 2:
-        return (x_int, candidate_y)
-    else:
-        return (x_int, curve.p - candidate_y)

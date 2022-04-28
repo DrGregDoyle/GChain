@@ -3,6 +3,7 @@ The Transaction class
 
 The Transaction will contain the following fields with assigned sizes:
 
+#====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
 #|  version     |   32          |   8           |   4               |#
@@ -11,8 +12,11 @@ The Transaction will contain the following fields with assigned sizes:
 #|  output count|   VLI         |   VLI         |   VLI             |#
 #|  outputs     |   var         |   var         |   var             |#
 #|  locktime    |   32          |   8           |   4               |#
+#====================================================================#
 
-
+TODO: Figure out where we verify that total input amount = total output amount
+    -Will be done in the node when validating transactions
+    -Will be done in the blockchain when validating transactions
 '''
 import random
 import string
@@ -21,6 +25,7 @@ import string
 IMPORTS
 '''
 from utxo import decode_raw_output_utxo, decode_raw_input_utxo, UTXO_INPUT, UTXO_OUTPUT
+from vli import VLI
 from hashlib import sha256
 import secrets
 
@@ -59,25 +64,11 @@ class Transaction:
 
         # Get VLI for input count
         input_count = len(self.inputs)
-        if input_count < pow(2, 8) - 3:
-            self.input_num = format(input_count, '02x')
-        elif pow(2, 8) - 3 <= input_count <= pow(2, 16):
-            self.input_num = 'FD' + format(input_count, '04x')
-        elif pow(2, 16) < input_count <= pow(2, 32):
-            self.input_num = 'FE' + format(input_count, '08x')
-        else:
-            self.input_num = 'FF' + format(input_count, '016x')
+        self.input_num = VLI(input_count).vli_string
 
         # Get VLI for output count
         output_count = len(self.outputs)
-        if output_count < pow(2, 8) - 3:
-            self.output_num = format(output_count, '02x')
-        elif pow(2, 8) - 3 <= output_count <= pow(2, 16):
-            self.output_num = 'FD' + format(output_count, '04x')
-        elif pow(2, 16) < output_count <= pow(2, 32):
-            self.output_num = 'FE' + format(output_count, '08x')
-        else:
-            self.output_num = 'FF' + format(output_count, '016x')
+        self.output_num = VLI(output_count).vli_string
 
     '''
     PROPERTIES
@@ -120,20 +111,14 @@ def decode_raw_transaction(raw_tx: str) -> Transaction:
     version = int(raw_tx[0:index1], 16)
 
     # Get number of inputs
-    first_byte = int(raw_tx[index1:index1 + 2], 16)
-    input_num = first_byte
-    if first_byte < 253:
-        index2 = index1 + 2
-    elif first_byte == 253:
-        input_num = int(raw_tx[index1 + 2:index1 + 4])
-        index2 = index1 + 4
-    elif first_byte == 254:
-        input_num = int(raw_tx[index1 + 2:index1 + 8])
-        index2 = index1 + 8
+    first_byte_input = int(raw_tx[index1:index1 + 2], 16)
+    temp_index_input = index1 + 2
+    if first_byte_input < 253:
+        input_num = first_byte_input
+        index2 = temp_index_input
     else:
-        assert first_byte == 255
-        input_num = int(raw_tx[index1 + 2:index1 + 16])
-        index2 = index1 + 16
+        index2 = temp_index_input + VLI.first_byte_index(first_byte_input)
+        input_num = int(raw_tx[temp_index_input:index2], 16)
 
     # Get all inputs
     inputs = []
@@ -144,19 +129,13 @@ def decode_raw_transaction(raw_tx: str) -> Transaction:
 
     # Get number of outputs
     first_byte_output = int(raw_tx[index2:index2 + 2], 16)
-    output_num = first_byte_output
+    temp_index_output = index2 + 2
     if first_byte_output < 253:
-        index3 = index2 + 2
-    elif first_byte_output == 253:
-        output_num = int(raw_tx[index1 + 2:index1 + 4])
-        index3 = index2 + 4
-    elif first_byte_output == 254:
-        output_num = int(raw_tx[index1 + 2:index1 + 8])
-        index3 = index2 + 8
+        output_num = first_byte_output
+        index3 = temp_index_output
     else:
-        assert first_byte_output == 255
-        output_num = int(raw_tx[index1 + 2:index1 + 16])
-        index3 = index2 + 16
+        index3 = temp_index_output + VLI.first_byte_index(first_byte_output)
+        output_num = int(raw_tx[temp_index_output:index3], 16)
 
     # Get all outputs
     outputs = []

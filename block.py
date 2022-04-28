@@ -2,6 +2,7 @@
 The Block class
 
 The Block HEADER will contain the following fields with assigned sizes:
+#====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
 #|  version     |   32          |   8           |   4               |#
@@ -13,18 +14,25 @@ The Block HEADER will contain the following fields with assigned sizes:
 #====================================================================#
 
 The Block TRANSACTIONS will contain the following fields with assigned sizes:
+#====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
 #|  tx_num      |   VLI         |   VLI         |   VLI             |#
 #|  transactions|   var         |   var         |   var             |#
 #====================================================================#
 
-The RAW block will be the hex strings of the header, followed by the tx_num VLI and the concatenation of all raw transactions.
+The RAW block will be the hex strings of the header, followed by the tx_num VLI and the concatenation of all raw
+transactions.
+
+TODO: Make self.transactions a list of transaction OBJECTS. In this fashion
+    > Block contains list of Transaction objects
+        > Transaction contain list of UTXO objects
 
 '''
 
 '''Imports'''
 from hashlib import sha256
+from vli import VLI
 import datetime
 from transaction import decode_raw_transaction, Transaction
 
@@ -52,7 +60,7 @@ class Block:
         self.target = format(target, f'0{self.TARGET_BITS // 4}x')
         self.nonce = format(nonce, f'0{self.NONCE_BITS // 4}x')
 
-        # Create timestamp if not used
+        # Create timestamp if not given
         if timestamp is None:
             self.timestamp = format(utc_to_seconds(), f'0{self.TIMESTAMP_BITS // 4}x')
         else:
@@ -71,14 +79,7 @@ class Block:
 
         # Calculate VLI based on number of transactions
         tx_count = len(self.transactions)
-        if tx_count < pow(2, 8) - 3:
-            self.tx_count = format(tx_count, '02x')
-        elif pow(2, 8) - 3 <= tx_count <= pow(2, 16):
-            self.tx_count = 'FD' + format(tx_count, '04x')
-        elif pow(2, 16) < tx_count <= pow(2, 32):
-            self.tx_count = 'FE' + format(tx_count, '08x')
-        else:
-            self.tx_count = 'FF' + format(tx_count, '016x')
+        self.tx_count = VLI(tx_count).vli_string
 
     '''
     PROPERTIES
@@ -102,6 +103,10 @@ class Block:
     @property
     def tx_ids(self):
         return self.hashlist(self.transactions)
+
+    @property
+    def tx_count_as_int(self):
+        return int(self.tx_count, 16)
 
     @property
     def id(self):
@@ -206,8 +211,7 @@ class Block:
         '''
         Will increase the given nonce value by 1
         '''
-        current_nonce = int(self.nonce, 16)
-        self.nonce = format(current_nonce + 1, f'0{self.NONCE_BITS // 4}x')
+        self.nonce = format(int(self.nonce, 16) + 1, f'0{self.NONCE_BITS // 4}x')
 
     '''
     RETRIEVE TX BY ID
@@ -281,23 +285,17 @@ def decode_raw_header(raw_hdr: str):
 
 def decode_raw_block_transactions(raw_block_tx: str) -> list:
     '''
-    We will take in the raw block transactions, construct a new transaction, verify it's construction, then save the raw_transaction
+    We will take in the raw block transactions, construct a new transaction, verify its construction, then save the raw_transaction
     '''
     # Get number of transactions
-    first_byte = int(raw_block_tx[0:2], 16)
-    input_num = first_byte
+    first_byte = int(raw_block_tx[:2], 16)
+    temp_index = 2
     if first_byte < 253:
-        tx_index = 2
-    elif first_byte == 253:
-        input_num = int(raw_block_tx[2:4], 16)
-        tx_index = 4
-    elif first_byte == 254:
-        input_num = int(raw_block_tx[2:8], 16)
-        tx_index = 8
+        input_num = first_byte
+        tx_index = temp_index
     else:
-        assert first_byte == 255
-        input_num = int(raw_block_tx[2:16], 16)
-        tx_index = 16
+        tx_index = temp_index + VLI.first_byte_index(first_byte)
+        input_num = int(raw_block_tx[temp_index:tx_index], 16)
 
     # Read in transactions
     transactions = []

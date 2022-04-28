@@ -7,7 +7,7 @@ Imports
 '''
 import secrets
 import numpy as np
-from wallet import Wallet, verify_signature
+from wallet import Wallet
 from hashlib import sha256
 
 '''
@@ -80,5 +80,5 @@ def test_signature():
     tx_hash2 = sha256('bad_hash'.encode()).hexdigest()
 
     sig = w.sign_transaction(tx_hash1)
-    assert verify_signature(sig, tx_hash1, w.public_key_point)
-    assert not verify_signature(sig, tx_hash2, w.public_key_point)
+    assert w.curve.verify_signature(sig, tx_hash1, w.public_key_point)
+    assert not w.curve.verify_signature(sig, tx_hash2, w.public_key_point)
