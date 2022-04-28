@@ -2,6 +2,7 @@
 The Block class
 
 The Block HEADER will contain the following fields with assigned sizes:
+#====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
 #|  version     |   32          |   8           |   4               |#
@@ -13,13 +14,19 @@ The Block HEADER will contain the following fields with assigned sizes:
 #====================================================================#
 
 The Block TRANSACTIONS will contain the following fields with assigned sizes:
+#====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
 #|  tx_num      |   VLI         |   VLI         |   VLI             |#
 #|  transactions|   var         |   var         |   var             |#
 #====================================================================#
 
-The RAW block will be the hex strings of the header, followed by the tx_num VLI and the concatenation of all raw transactions.
+The RAW block will be the hex strings of the header, followed by the tx_num VLI and the concatenation of all raw
+transactions.
+
+TODO: Make self.transactions a list of transaction OBJECTS. In this fashion
+    > Block contains list of Transaction objects
+        > Transaction contain list of UTXO objects
 
 '''
 
@@ -53,7 +60,7 @@ class Block:
         self.target = format(target, f'0{self.TARGET_BITS // 4}x')
         self.nonce = format(nonce, f'0{self.NONCE_BITS // 4}x')
 
-        # Create timestamp if not used
+        # Create timestamp if not given
         if timestamp is None:
             self.timestamp = format(utc_to_seconds(), f'0{self.TIMESTAMP_BITS // 4}x')
         else:
@@ -96,6 +103,10 @@ class Block:
     @property
     def tx_ids(self):
         return self.hashlist(self.transactions)
+
+    @property
+    def tx_count_as_int(self):
+        return int(self.tx_count, 16)
 
     @property
     def id(self):
@@ -200,8 +211,7 @@ class Block:
         '''
         Will increase the given nonce value by 1
         '''
-        current_nonce = int(self.nonce, 16)
-        self.nonce = format(current_nonce + 1, f'0{self.NONCE_BITS // 4}x')
+        self.nonce = format(int(self.nonce, 16) + 1, f'0{self.NONCE_BITS // 4}x')
 
     '''
     RETRIEVE TX BY ID
@@ -284,8 +294,7 @@ def decode_raw_block_transactions(raw_block_tx: str) -> list:
         input_num = first_byte
         tx_index = temp_index
     else:
-        vli_adjust = VLI.first_byte_index(first_byte)
-        tx_index = temp_index + vli_adjust
+        tx_index = temp_index + VLI.first_byte_index(first_byte)
         input_num = int(raw_block_tx[temp_index:tx_index], 16)
 
     # Read in transactions

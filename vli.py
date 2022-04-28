@@ -31,7 +31,7 @@ class VLI:
             self.vli_string = None
 
     @staticmethod
-    def first_byte_index(self, first_byte: int):
+    def first_byte_index(first_byte: int):
         '''
         We return the number of characters a string index would increase by in order to read the VLI
         '''

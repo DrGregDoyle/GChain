@@ -25,7 +25,7 @@ def test_vli():
     int6 = pow(2, 32)
     int7 = secrets.randbelow(pow(2, 64))
     int8 = pow(2, 64)
-    int9 = 0
+    int9 = -1
 
     # Test 1 - random int belo 253
     string1 = VLI(int1).vli_string
@@ -66,5 +66,3 @@ def test_vli():
     # Test9 - int = 0
     string9 = VLI(int9).vli_string
     assert string9 is None
-
-

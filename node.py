@@ -131,11 +131,34 @@ class Node:
 
         self.is_mining = False
 
-    def get_mining_reward(self):
+    def get_mining_reward(self, reward=50):
         '''
-        Algorithm for determining mining reward goes here
+        The mining reward will be the difference between the sum of all input amounts and the sum of all output
+        amounts, plus the reward variable. We also verify that the total_input_amount >= total_output_amount and that
+        the referenced output utxos for each input utxo exists.
         '''
-        return 50
+
+        total_input_amount = 0
+        total_output_amount = 0
+
+        for t in self.validated_transactions:
+            # Recover tx
+            temp_tx = decode_raw_transaction(t)
+
+            # Add total input amount for tx
+            for i in temp_tx.inputs:
+                tx_id = i.tx_id
+                tx_index = i.tx_index
+                input_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
+                assert not input_index.empty
+                total_input_amount += self.utxos.loc[input_index]['amount'].values[0]
+
+            # Add total output amount for tx
+            for t in temp_tx.outputs:
+                total_output_amount += int(t.amount, 16)
+
+        assert total_input_amount >= total_output_amount
+        return reward + (total_input_amount - total_output_amount)
 
     def get_mining_target(self):
         '''
@@ -152,13 +175,15 @@ class Node:
 
         '''
         added = self.blockchain.add_block(raw_block)
+        if added:
+            self.check_for_parents()
         return added
 
     '''
     TRANSACTIONS
     '''
 
-    def add_transaction(self, raw_tx: str):
+    def add_transaction(self, raw_tx: str) -> bool:
         '''
         When a Node receives a new transaction (tx), one of three things may happen: either the tx gets validated,
         in which case it's added to the validated transactions pool; or the tx has an invalid signature and locking
@@ -226,10 +251,23 @@ class Node:
             # Add tx to validated tx pool
             self.validated_transactions.append(raw_tx)
 
+            # Check if the new tx
+
         # Flagged for orphaned. Add to orphan pool
         else:
             self.orphaned_transactions.append(raw_tx)
+
         return True
+
+    def check_for_parents(self):
+        '''
+        For every orphaned transaction, we see if its parents have arrived yet. If not, they will either be placed
+        back in the orphaned tx pool, or invalidated.
+        '''
+        orphan_copies = self.orphaned_transactions.copy()
+        self.orphaned_transactions = []
+        for r in orphan_copies:
+            self.add_transaction(r)
 
     '''
     TESTING

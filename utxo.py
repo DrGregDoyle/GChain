@@ -4,7 +4,7 @@ The UTXO classes
 We divide the UTXO into two classes: UTXO_INPUT, UTXO_OUTPUT.
 
 The UTXO_INPUT has the following fields w corresponding size:
-
+#====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
 #|  tx_id       |   256         |   64          |   32              |#
@@ -16,7 +16,7 @@ The UTXO_INPUT has the following fields w corresponding size:
 
 
 The UTXO_OUTPUT has the following fields w corresponding size:
-
+#====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
 #|  amount      |   32          |   8           |   4               |#
@@ -69,10 +69,6 @@ class UTXO_INPUT:
     def byte_size(self):
         return len(self.raw_utxo) // 2
 
-    @property
-    def index_as_int(self):
-        return int(self.tx_index, 16)
-
 
 class UTXO_OUTPUT:
     '''
@@ -105,10 +101,6 @@ class UTXO_OUTPUT:
     def byte_size(self):
         return len(self.raw_utxo) // 2
 
-    @property
-    def amount_as_int(self):
-        return int(self.amount, 16)
-
 
 '''
 DECODE RAW UTXOS
@@ -135,8 +127,7 @@ def decode_raw_input_utxo(input_utxo: str):
         sig_length = first_byte
         index3 = temp_index
     else:
-        vli_adjust = VLI.first_byte_index(first_byte)
-        index3 = temp_index + vli_adjust
+        index3 = temp_index + VLI.first_byte_index(first_byte)
         sig_length = int(input_utxo[temp_index:index3], 16)
 
     # Get the signature
@@ -172,8 +163,7 @@ def decode_raw_output_utxo(output_utxo: str):
         script_length = first_byte
         index2 = temp_index
     else:
-        vli_adjust = VLI.first_byte_index(first_byte)
-        index2 = temp_index + vli_adjust
+        index2 = temp_index + VLI.first_byte_index(first_byte)
         script_length = int(output_utxo[temp_index:index2], 16)
 
     # Get the locking script
@@ -188,21 +178,3 @@ def decode_raw_output_utxo(output_utxo: str):
 
     # Return utxo output object
     return new_utxo
-
-
-'''
-TESTING
-'''
-from hashlib import sha256
-from wallet import Wallet
-
-
-def test():
-    w = Wallet()
-    hash = sha256('hash'.encode()).hexdigest()
-    sig = w.sign_transaction(hash)
-
-    input1 = UTXO_INPUT(hash, 0, sig)
-    locking_script = w.compressed_public_key
-    output1 = UTXO_OUTPUT(10, locking_script)
-    return output1

@@ -3,6 +3,7 @@ The Transaction class
 
 The Transaction will contain the following fields with assigned sizes:
 
+#====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
 #|  version     |   32          |   8           |   4               |#
@@ -11,8 +12,11 @@ The Transaction will contain the following fields with assigned sizes:
 #|  output count|   VLI         |   VLI         |   VLI             |#
 #|  outputs     |   var         |   var         |   var             |#
 #|  locktime    |   32          |   8           |   4               |#
+#====================================================================#
 
-
+TODO: Figure out where we verify that total input amount = total output amount
+    -Will be done in the node when validating transactions
+    -Will be done in the blockchain when validating transactions
 '''
 import random
 import string
@@ -113,8 +117,7 @@ def decode_raw_transaction(raw_tx: str) -> Transaction:
         input_num = first_byte_input
         index2 = temp_index_input
     else:
-        vli_adjust_input = VLI.first_byte_index(first_byte_input)
-        index2 = temp_index_input + vli_adjust_input
+        index2 = temp_index_input + VLI.first_byte_index(first_byte_input)
         input_num = int(raw_tx[temp_index_input:index2], 16)
 
     # Get all inputs
@@ -131,8 +134,7 @@ def decode_raw_transaction(raw_tx: str) -> Transaction:
         output_num = first_byte_output
         index3 = temp_index_output
     else:
-        vli_adjust_output = VLI.first_byte_index(first_byte_output)
-        index3 = temp_index_output + vli_adjust_output
+        index3 = temp_index_output + VLI.first_byte_index(first_byte_output)
         output_num = int(raw_tx[temp_index_output:index3], 16)
 
     # Get all outputs
