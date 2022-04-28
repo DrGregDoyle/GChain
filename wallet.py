@@ -4,27 +4,35 @@ The Wallet class
 -The wallet will generate ECC keys upon instantiation.
 -The address will be related to the locking/unlocking script used in the utxos
 
-###NOTE ON RIPEMD
+NOTE ON RIPEMD:
     -The ripemd only seems to work through the update function
     -This means for a proper hash, we need to generate a new ripemd160 hash object each time
 
 
-#TODO: Allow for dynamically generated addresses from the master keys
-#TODO: Pull a dictionary from a web api for the seed phrase
-#TODO: Add prefix mapping function for address creation - the prefix will tie into the locking/unlocking script
+TODO: Allow for dynamically generated addresses from the master keys
+
+TODO: Pull a dictionary from a web api for the seed phrase
+
+TODO: Add prefix mapping function for address creation - the prefix will tie into the locking/unlocking script
+
+TODO: Add the curve creation during instantiation depending on the connection to the blockchain. (Either that or
+have curve coeff pouches or something.)
+
 
 
 '''
-
-'''Imports'''
+'''
+IMPORTS
+'''
 import pandas as pd
 import secrets
-import math
 import hashlib
-from hashlib import sha256, sha512
+from hashlib import sha256, sha512, sha1
 from cryptography import EllipticCurve
 
-'''Wallet Class'''
+'''
+CLASS
+'''
 
 
 class Wallet:
@@ -206,7 +214,7 @@ class Wallet:
         '''
         Using the compressed public key of the wallet, we obtain our address as follows:
             1) Hash the compressed public key using sha256
-            2) Hash the result of 1) using ripemd160 - this yields a hex string with 40 characters
+            2) Hash the result of 1) using SHA-1 - this yields a hex string with 40 characters
             3) Prepend a 1-byte (2 hex) prefix to 2) - call this the versioned hash
             4) Sha256 hash the versioned hash twice - take the first "checksum_bits" bits and append to end of versioned hash
             5) Encode the versioned hash using base58 - encode the prefix separately as it will not necessarily map to the base58 value
@@ -215,10 +223,8 @@ class Wallet:
         # 1) Hash the compressed public key using sha256
         hash1 = sha256(self.compressed_public_key.encode()).hexdigest()
 
-        # 2) Hash 1) using ripemd160
-        ripemd160 = hashlib.new('ripemd160')
-        ripemd160.update(hash1.encode())
-        hash2 = ripemd160.hexdigest()
+        # 2) Hash 1) using sha-1
+        hash2 = sha1(hash1.encode()).hexdigest()
 
         # 3) Prepend a 1-byte prefix to 2)
         prefix = format(version, f'0{prefix_bits // 4}x')
@@ -274,6 +280,7 @@ class Wallet:
 
         # 3) Select a random integer k (Loop from here)
         signed = False
+        sig = None
         while not signed:
             k = secrets.randbelow(n)
 
