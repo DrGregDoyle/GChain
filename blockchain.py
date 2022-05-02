@@ -177,7 +177,7 @@ class Blockchain:
                     return False
 
                 # Add the associated amount
-                total_input_amount += self.utxos.loc[output_index]['amount'].values[0]
+                total_input_amount += int(self.utxos.loc[output_index]['amount'].values[0], 16)
 
                 # Remove the output UTXO
                 self.utxos = self.utxos.drop(self.utxos.index[output_index])
