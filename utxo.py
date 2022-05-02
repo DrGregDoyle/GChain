@@ -33,6 +33,7 @@ IMPORTS
 '''
 from vli import VLI
 from wallet import Wallet
+from helpers import int_to_base58, base58_to_int
 
 
 class UTXO_INPUT:
@@ -82,7 +83,7 @@ class UTXO_OUTPUT:
         self.amount = format(amount, f'0{self.AMOUNT_BITS // 4}x')
 
         # Save address as hex value
-        self.hex_address = hex(Wallet().base58_to_int(address))[2:]
+        self.hex_address = hex(base58_to_int(address))[2:]
 
         # Use variable length integer for byte length of signature
         byte_length = len(self.hex_address) // 2
@@ -102,7 +103,7 @@ class UTXO_OUTPUT:
 
     @property
     def address(self):
-        return Wallet().int_to_base58(int(self.hex_address, 16))
+        return int_to_base58(int(self.hex_address, 16))
 
 
 '''
@@ -174,7 +175,7 @@ def decode_raw_output_utxo(output_utxo: str):
     hex_address = output_utxo[index2: index3]
 
     # Create the utxo
-    new_utxo = UTXO_OUTPUT(amount, Wallet().int_to_base58(int(hex_address, 16)))
+    new_utxo = UTXO_OUTPUT(amount, int_to_base58(int(hex_address, 16)))
 
     # Verify the script length
     assert int(new_utxo.script_length, 16) == script_length
