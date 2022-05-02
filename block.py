@@ -24,15 +24,14 @@ The Block TRANSACTIONS will contain the following fields with assigned sizes:
 The RAW block will be the hex strings of the header, followed by the tx_num VLI and the concatenation of all raw
 transactions.
 
-TODO: Make self.transactions a list of transaction OBJECTS. In this fashion
-    > Block contains list of Transaction objects
-        > Transaction contain list of UTXO objects
+TODO: Make BIT LENGTH values standard, depending on a common bit length (either from the prime or dominant hash function)
 
 '''
 
 '''Imports'''
 from hashlib import sha256
 from vli import VLI
+from helpers import utc_to_seconds, seconds_to_utc
 import datetime
 from transaction import decode_raw_transaction, Transaction
 
@@ -48,13 +47,17 @@ class Block:
     NONCE_BITS = 32
     TARGET_BITS = 32
 
-    def __init__(self, version: int, prev_hash: str, target: int, nonce: int, transactions: list, timestamp=None):
+    def __init__(self, prev_hash: str, target: int, nonce: int, transactions: list, timestamp=None, version=1):
         '''
-        The block will calculate the merkle root from the transactions list
-        Transactions will be a list of raw transaction values. The raw hex will be saved to the block.
-        The hash vals of each transaction will be calculated for the merkle root.
-        We can change api values to only report tx_hashes but the raw tx will be saved to the chain.
+        A new Block can be instantiated using a previous hash, target value, nonce and list of raw transactions. If a
+        Block needs to be recreated, it can use the same values but specify the timestamp. The Block object will save
+        the transactions as a list of transaction objects. But the raw block will contain the raw transactions (
+        similar to how Transactions have list of UTXO objects, but the raw tx contains the raw utxo.)
+
+        All input values will be formatted according to hardcoded bit lengths.
+
         '''
+
         # Get formatted version, target and nonce
         self.version = format(version, f'0{self.VERSION_BITS // 4}x')
         self.target = format(target, f'0{self.TARGET_BITS // 4}x')
@@ -66,8 +69,13 @@ class Block:
         else:
             self.timestamp = format(timestamp, f'0{self.TIMESTAMP_BITS // 4}x')
 
-        # Create merkle root from transactions
-        self.transactions = transactions
+        # Create list of Transaction objects
+        self.transactions = []
+        for raw_tx in transactions:
+            new_tx = decode_raw_transaction(raw_tx)
+            self.transactions.append(new_tx)
+
+        # Calculate merkle root
         self.merkle_root = self.calc_merkle_root()
 
         # Ensure merkle_root and prev_hash are 256-bits
@@ -97,12 +105,15 @@ class Block:
     def raw_transactions(self):
         transaction_string = ''
         for t in self.transactions:
-            transaction_string += t
+            transaction_string += t.raw_transaction
         return self.tx_count + transaction_string
 
     @property
     def tx_ids(self):
-        return self.hashlist(self.transactions)
+        id_list = []
+        for t in self.transactions:
+            id_list.append(t.id)
+        return id_list
 
     @property
     def tx_count_as_int(self):
@@ -248,8 +259,8 @@ def decode_raw_block(raw_block: str):
     transactions = decode_raw_block_transactions(transaction_string)
 
     # Create the block
-    new_block = Block(header_dict['version'], header_dict['prev_hash'], header_dict['target'], header_dict['nonce'],
-                      transactions=transactions, timestamp=header_dict['timestamp'])
+    new_block = Block(header_dict['prev_hash'], header_dict['target'], header_dict['nonce'],
+                      transactions=transactions, timestamp=header_dict['timestamp'], version=header_dict['version'])
 
     # Verify block construction
     assert new_block.merkle_root == header_dict['merkle_root']
@@ -285,7 +296,9 @@ def decode_raw_header(raw_hdr: str):
 
 def decode_raw_block_transactions(raw_block_tx: str) -> list:
     '''
-    We will take in the raw block transactions, construct a new transaction, verify its construction, then save the raw_transaction
+    We will take in the raw block transactions, construct a new transaction, verify its construction, then save the
+    raw_transactions. We emphasize that we return a list of raw transactions, as the list will be used to instantiate
+    a Block
     '''
     # Get number of transactions
     first_byte = int(raw_block_tx[:2], 16)
@@ -309,22 +322,6 @@ def decode_raw_block_transactions(raw_block_tx: str) -> list:
 
 
 '''
-Datetime Converter
-'''
-
-
-def utc_to_seconds():
-    date_string = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
-    date_object = datetime.datetime.strptime(date_string, '%Y-%m-%dT%H:%M:%S%z')
-    return int(date_object.timestamp())
-
-
-def seconds_to_utc(seconds: int):
-    date_object = datetime.datetime.utcfromtimestamp(seconds)
-    return date_object.isoformat()
-
-
-'''
 TESTING
 '''
 from transaction import generate_transaction
@@ -342,5 +339,5 @@ def generate_test_block(bit_target=20):
     version = 1
     target = bit_target
     nonce = 0
-    new_block = Block(version, tx_hash, target, nonce, tx)
+    new_block = Block(tx_hash, target, nonce, tx)
     return new_block

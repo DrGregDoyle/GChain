@@ -23,11 +23,10 @@ def test_input_utxos():
     w = Wallet()
     reward = np.random.randint(40)
     target = 20
-    locking_script = w.address
-    output1 = UTXO_OUTPUT(reward, locking_script)
+    output1 = UTXO_OUTPUT(reward, w.address)
     tx_1 = Transaction(inputs=[], outputs=[output1.raw_utxo], locktime=1)
 
-    genesis_block = Block(1, '', target, 0, [tx_1.raw_transaction])
+    genesis_block = Block('', target, 0, [tx_1.raw_transaction])
     mined_genesis_raw = m.mine_block(genesis_block.raw_block)
     assert b.add_block(mined_genesis_raw)
     mined_genesis_block = decode_raw_block(mined_genesis_raw)
@@ -36,8 +35,8 @@ def test_input_utxos():
     sig = w.sign_transaction(tx_id)
     input1 = UTXO_INPUT(tx_id, tx_index, sig)
     tx_2 = Transaction(inputs=[input1.raw_utxo], outputs=[], locktime=2)
-    
-    # next_block = Block(1, mined_genesis_block.id, target, 0, [tx_2.raw_transaction])
-    # mined_next_raw = m.mine_block(next_block.raw_block)
-    # assert b.add_block(mined_next_raw)
-    # assert b.utxos.empty
+
+    next_block = Block(mined_genesis_block.id, target, 0, [tx_2.raw_transaction])
+    mined_next_raw = m.mine_block(next_block.raw_block)
+    assert b.add_block(mined_next_raw)
+    assert b.utxos.empty

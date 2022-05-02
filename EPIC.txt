@@ -9,3 +9,9 @@ GCHain stories:
 006: Create decode transactions - check
 007: Create decode Block - check
 008: Create unit test for block decoding - check
+009: Change locking_script in UTXO_OUTPUT to 'address'
+010: Incorporate the address checksum - check
+011: Put BASE58 encoding outside the Wallet somewhere - check
+012: Change "Locktime" to "first_block" - enable block # checking for UTXO's and transactions
+013: Change Block so that it has transaction objects instead of raw tx's
+014: Modify properties so that only dynamic objects are a property, not static
