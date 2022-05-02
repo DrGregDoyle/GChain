@@ -1,6 +1,17 @@
 '''
 The Blockchain class
+=====
 
+The Blockchain will be the data structure which grows due to emergent consensus of the nodes. Each Node will contain
+a copy of the Blockchain. When new Blocks are added, consensus is reached with available nodes through the consensus
+algorithm.
+
+The Blockchain will contain a list of raw Blocks, as well as the output UTXO pool. When a new Block is saved to the
+Blockchain, the corresponding output UTXOs are consumed by the input in order to generate the new output UTXOs. It
+may happen that a Block gets removed due to consensus algorithm, in which case the consumed output UTXOs will be
+restored.
+
+The Blockchain will contain the fixed curve parameters used for the address and locking script.
 
 '''
 
@@ -58,6 +69,10 @@ class Blockchain:
     def height(self):
         return len(self.chain) - 1
 
+    @property
+    def curve_parameters(self):
+        return [self.curve.a, self.curve.b, self.curve.p]
+
     '''
     UTXO POOL
     '''
@@ -76,10 +91,14 @@ class Blockchain:
 
         # Find the output signature and public key point
         output_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
+
+        # If the output utxo is missing, return False
+        if output_index.empty:
+            return False
+
+        # Validate the signature, return False if invalid
         locking_script = self.utxos.loc[output_index]['locking_script'].values[0]
         pk_point = self.curve.get_public_key_point(locking_script)
-
-        # Validate the signature
         valid = self.curve.verify_signature(utxo_input.signature, tx_id, pk_point)
         if not valid:
             return False
@@ -101,39 +120,69 @@ class Blockchain:
 
         # Verify target
         target = pow(2, 256 - int(candidate_block.target, 16))
-        try:
-            assert int(candidate_block.id, 16) <= target, 'Target error in block'
-        except AssertionError as msg:
-            print(msg)
+        if int(candidate_block.id, 16) > target:
+            # Logging:
+            print('Target error in block')
             return False
 
         # Verify block header values
         if self.chain != []:
             last_block = decode_raw_block(self.last_block)
-            try:
-                assert last_block.id == candidate_block.prev_hash, 'Previous hash error in block'
-            except AssertionError as msg:
-                print(msg)
+            if last_block.id != candidate_block.prev_hash:
+                # Logging
+                print('Previous hash error in block')
                 return False
 
-        # Consume UTXOs
+        # Input/Output trackers
+        total_input_amount = 0
+        total_output_amount = 0
+
+        # Iterate over list of raw transactions
         raw_tx_list = candidate_block.transactions
         for raw in raw_tx_list:
+
+            # Decode transaction
             new_transaction = decode_raw_transaction(raw)
+
+            # Get input num
+            input_byte = int(new_transaction.input_num[0:2], 16)
+            input_num = input_byte
+            if input_byte < 253:
+                pass
+            else:
+                input_num = int(new_transaction.input_num[2:], 16)
+
+            # Verify input num
+            assert input_num == len(new_transaction.inputs)
+
+            # Consume output utxo's
             for i in new_transaction.inputs:
-                # Consume output utxo's
+
+                # Get tx_id and tx_index for output
                 tx_id = i.tx_id
                 tx_index = int(i.tx_index, 16)
-                input_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
-                if not input_index.empty:
-                    # Validate input
-                    locking_script = self.utxos.loc[input_index]['locking_script'].values[0]
-                    pk_point = self.curve.get_public_key_point(locking_script)
-                    sig = i.signature
-                    # Consume utxo if signatures match
-                    if self.curve.verify_signature(sig, tx_id, pk_point):
-                        self.utxos = self.utxos.drop(self.utxos.index[input_index])
 
+                # Find the output signature and public key point
+                output_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
+
+                # If the output utxo is missing, return False
+                if output_index.empty:
+                    return False
+
+                # Validate the signature, return False if invalid
+                locking_script = self.utxos.loc[output_index]['locking_script'].values[0]
+                pk_point = self.curve.get_public_key_point(locking_script)
+                valid = self.curve.verify_signature(i.signature, tx_id, pk_point)
+                if not valid:
+                    return False
+
+                # Add the associated amount
+                total_input_amount += int(self.utxos.loc[output_index]['amount'].values[0], 16)
+
+                # Remove the output UTXO
+                self.utxos = self.utxos.drop(self.utxos.index[output_index])
+
+            # Get output num
             first_byte = int(new_transaction.output_num[0:2], 16)
             output_num = first_byte
             if first_byte < 253:
@@ -141,6 +190,7 @@ class Blockchain:
             else:
                 output_num = int(new_transaction.output_num[2:], 16)
 
+            # Add new Output UTXOs - use count for the index
             count = 0
             for t in new_transaction.outputs:
                 temp_amount = t.amount

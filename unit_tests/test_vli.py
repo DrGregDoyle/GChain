@@ -29,7 +29,7 @@ def test_vli():
 
     # Test 1 - random int belo 253
     string1 = VLI(int1).vli_string
-    assert string1 == hex(int1)[2:]
+    assert string1 == format(int1, '02x')
 
     # Test 2 - int == 253
     string2 = VLI(int2).vli_string
