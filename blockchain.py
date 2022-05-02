@@ -20,7 +20,7 @@ IMPORTS
 '''
 from block import decode_raw_block, Block
 import pandas as pd
-from helpers import get_signature_parts
+from helpers import get_signature_parts, base58_to_int, int_to_base58
 from transaction import decode_raw_transaction
 from utxo import decode_raw_input_utxo, decode_raw_output_utxo, UTXO_INPUT, UTXO_OUTPUT
 from cryptography import EllipticCurve
@@ -96,7 +96,7 @@ class Blockchain:
         checksum = sha256(sha256(raw_addy.encode()).hexdigest().encode()).hexdigest()[: self.ADDRESS_CHECKSUM_BITS // 4]
 
         # 3) Return True/False
-        return Wallet().int_to_base58(int(raw_addy + checksum, 16)) == address
+        return int_to_base58(int(raw_addy + checksum, 16)) == address
 
     def validate_signature(self, input_sig: str, output_addy: str, tx_id: str) -> bool:
         '''

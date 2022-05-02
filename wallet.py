@@ -29,6 +29,7 @@ import secrets
 from hashlib import sha256, sha512, sha1
 from cryptography import EllipticCurve
 from vli import VLI
+from helpers import base58_to_int, int_to_base58
 
 '''
 CLASS
@@ -41,13 +42,6 @@ class Wallet:
     '''
     MINBIT_EXP = 7
     DICT_EXP = 11
-    BASE58_LIST = ['1', '2', '3', '4', '5', '6', '7', '8', '9',
-                   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J',
-                   'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T',
-                   'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c',
-                   'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'm',
-                   'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
-                   'w', 'x', 'y', 'z']
 
     def __init__(self, seed_bits=128, address_checksum_bits=32, version=0, seed=None, a=None,
                  b=None,
@@ -102,7 +96,7 @@ class Wallet:
 
     @property
     def hex_address(self):
-        return hex(self.base58_to_int(self.address))[2:]
+        return hex(base58_to_int(self.address))[2:]
 
     '''
     SEED PHRASE
@@ -216,41 +210,37 @@ class Wallet:
 
     def get_address(self, checksum_bits: int):
         '''
-        The Wallet address is a user friendly representation of an encoded compressed public key. We twice encode the
-        public key and add a checksum for verification. This yields a hex string we call the "checksum encoded
-        compressed public key (CECPK)." This hex string has an integer value, which we then encode using BASE58
-        encoding - which is an alphabet map for a given reside mod 58 This BASE58 encoding of the checksum encoded
-        compressed public key is the address.
+        The Wallet address is a user friendly representation of an encoded compressed public key. We first encode the
+        compressed public key using sha256 and subsequently encode the result using sha1. This yields a 40 character
+        hex string we call the encoded compressed public key (ECPK). We then create a checksum by twice encoding the
+        ECPK using sha256, and taking the first checksum_bits//4 characters. This checksum is appended to the ECPK in
+        order to create the hex string we call the checksum encoded compressed public key (CECPK). Finally,
+        the CECPK is BASE58 encoded and returned as address.
+
 
         The address is largely used for display purposes. The UTXO_OUTPUT can be created using the address,
         but the raw_utxo will contain the CECPK. We note that unlike BITCOIN, we do not use prefixes as we only have
         one signature scheme.
 
         Using the compressed public key of the wallet, we obtain our address as follows:
-            1) Hash the compressed public key using sha256
-            2) Hash the result of 1) using SHA-1 - this yields a hex string with 40 characters
-            3) Take the sha256 hash of this hex string. Retrieve the designated number of checksum_bits for the checksum.
-            4) Append the checksum to the end of the string found in 2). THIS IS THE CECPK
-            5) Encode the CECPK in base58 and this is the address.
+            1) Take the SHA1 encoding of the SHA256 encoding of the compressed public key. This is the ECPK.
+            2) Take the first checksum_bits//4 characters of the SHA256 encoding of the SHA256 encoding of the ECPK. This is the checksum. Append to the ECPK to make the CECPK.
+            3) Return the BASE58 encoding of the CECPK.
 
         Note: As we are using sha1 encoding and 32 checksum bits (4 checksum bytes, 8 hex chars), the CECPK will
         always be a hex string of 48 characters.
 
         '''
 
-        # 1) Hash the compressed public key using sha256
-        hash1 = sha256(self.compressed_public_key.encode()).hexdigest()
+        # 1) Get the ECPK
+        ecpk = sha1(sha256(self.compressed_public_key.encode()).hexdigest().encode()).hexdigest()
 
-        # 2) Hash 1) using sha-1
-        hash2 = sha1(hash1.encode()).hexdigest()
+        # 2 ) Get the checksum and create the CECPK
+        checksum = sha256(sha256(ecpk.encode()).hexdigest().encode()).hexdigest()[:checksum_bits // 4]
+        cecpk = ecpk + checksum
 
-        # 3 ) Sha256 the versioned_hash twice. Append the first "checksum_bits" bits
-        hash3 = sha256(sha256(hash2.encode()).hexdigest().encode()).hexdigest()
-        checksum = hash3[:checksum_bits // 4]
-        cecpk = hash2 + checksum
-
-        # 4) Encode cecpk into base58 string and return
-        return self.int_to_base58(int(cecpk, 16))
+        # 3) Return the BASE58 encoding of the cecpk
+        return int_to_base58(int(cecpk, 16))
 
     '''
     TRANSACTIONS
@@ -327,40 +317,40 @@ class Wallet:
         # 6) Return the signature
         return sig
 
-    '''
-    BASE58
-    '''
-
-    def int_to_base58(self, num: int) -> str:
-        '''
-        Explanation here
-        '''
-        base58_string = ''
-        num_copy = num
-        # If num_copy is negative, keep adding 58 until it isn't
-        # Negative numbers will always result in a single residue
-        # Maybe think about returning error. No negative integer should ever be used.
-        while num_copy < 0:
-            num_copy += 58
-        if num_copy == 0:
-            base58_string = '1'
-        else:
-            while num_copy > 0:
-                remainder = num_copy % 58
-                base58_string = self.BASE58_LIST[remainder] + base58_string
-                num_copy = num_copy // 58
-        return base58_string
-
-    def base58_to_int(self, base58_string: str) -> int:
-        '''
-        To convert a base58 string back to an int:
-            -For each character, find the numeric index in the list
-            -Multiply this numeric value by a corresponding power of 58
-            -Sum all values
-        '''
-
-        sum = 0
-        for x in range(0, len(base58_string)):
-            numeric_val = self.BASE58_LIST.index(base58_string[x:x + 1])
-            sum += numeric_val * pow(58, len(base58_string) - x - 1)
-        return sum
+    # '''
+    # BASE58
+    # '''
+    #
+    # def int_to_base58(self, num: int) -> str:
+    #     '''
+    #     Explanation here
+    #     '''
+    #     base58_string = ''
+    #     num_copy = num
+    #     # If num_copy is negative, keep adding 58 until it isn't
+    #     # Negative numbers will always result in a single residue
+    #     # Maybe think about returning error. No negative integer should ever be used.
+    #     while num_copy < 0:
+    #         num_copy += 58
+    #     if num_copy == 0:
+    #         base58_string = '1'
+    #     else:
+    #         while num_copy > 0:
+    #             remainder = num_copy % 58
+    #             base58_string = self.BASE58_LIST[remainder] + base58_string
+    #             num_copy = num_copy // 58
+    #     return base58_string
+    #
+    # def base58_to_int(self, base58_string: str) -> int:
+    #     '''
+    #     To convert a base58 string back to an int:
+    #         -For each character, find the numeric index in the list
+    #         -Multiply this numeric value by a corresponding power of 58
+    #         -Sum all values
+    #     '''
+    #
+    #     sum = 0
+    #     for x in range(0, len(base58_string)):
+    #         numeric_val = self.BASE58_LIST.index(base58_string[x:x + 1])
+    #         sum += numeric_val * pow(58, len(base58_string) - x - 1)
+    #     return sum
