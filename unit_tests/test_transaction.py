@@ -6,6 +6,7 @@ from transaction import Transaction, decode_raw_transaction
 from utxo import UTXO_OUTPUT, UTXO_INPUT
 import secrets
 from hashlib import sha256
+from wallet import Wallet
 
 
 def test_raw_transaction():
@@ -20,11 +21,11 @@ def test_raw_transaction():
     input_utxo2 = UTXO_INPUT(tx_id, tx_index2, sig_script2, sequence)
 
     amount = secrets.randbelow(1000)
-    unlock_script = hex(secrets.randbits(360))[2:]
+    unlock_script = Wallet().address
     output_utxo = UTXO_OUTPUT(amount, unlock_script)
 
     amount2 = secrets.randbelow(4000)
-    unlock_script2 = hex(secrets.randbits(155))[2:]
+    unlock_script2 = Wallet().address
     output_utxo2 = UTXO_OUTPUT(amount2, unlock_script2)
 
     version = 1

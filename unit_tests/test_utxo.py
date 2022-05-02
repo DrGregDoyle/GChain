@@ -5,6 +5,7 @@ UTXO Testing
 from hashlib import sha256
 from utxo import UTXO_INPUT, UTXO_OUTPUT, decode_raw_input_utxo, decode_raw_output_utxo
 import secrets
+from wallet import Wallet
 
 
 def test_raw_utxo():
@@ -21,10 +22,10 @@ def test_raw_utxo():
 
 
 def test_raw_output():
-    random_bits = secrets.randbelow(1024)
     amount = secrets.randbelow(1000)
-    locking_script = hex(secrets.randbits(random_bits))[2:]
-    output1 = UTXO_OUTPUT(amount, locking_script)
+    address = Wallet().address
+
+    output1 = UTXO_OUTPUT(amount, address)
     raw1 = output1.raw_utxo
     output2 = decode_raw_output_utxo(raw1)
 

@@ -367,10 +367,10 @@ class EllipticCurve:
     Verify Signature
     '''
 
-    def verify_signature(self, signature: str, tx_hash: str, public_key_point: tuple) -> bool:
+    def verify_signature(self, signature: tuple, tx_hash: str, public_key_point: tuple) -> bool:
         '''
-        Given a signature (r,s) and a transaction hash, we verify the signature against the Wallet's public key.
-        NB: The signature will be a 128-character hex string representing r + s
+        Given a signature pair (r,s), an encoded message tx_hash and a public key point (x,y), we verify the
+        signature using the curve properties of the class.
 
 
         Algorithm
@@ -387,10 +387,8 @@ class EllipticCurve:
 
         # 1) Verify our values first
         assert self.has_prime_order
-        assert len(signature) == self.order.bit_length() // 2
         n = self.order
-        r = int(signature[:self.order.bit_length() // 4], 16)
-        s = int(signature[self.order.bit_length() // 4:], 16)
+        r, s = signature
         assert 1 <= r <= n - 1
         assert 1 <= s <= n - 1
 
@@ -425,15 +423,15 @@ class EllipticCurve:
         parity = int(compressed_key[:2], 16)
         x_int = int(compressed_key[2:], 16)
 
-        # 3 - Get the y val
+        # 2 - Get the y val
         y_int = self.find_y_from_x(x_int)
 
-        # 4 - Make sure parity is correct
+        # 3 - Make sure parity is correct
         if y_int % 2 != parity % 2:
             y_int = self.p - y_int
 
-        # 5 - Verify the point
+        # 4 - Verify the point
         assert self.is_on_curve((x_int, y_int))
 
-        # 6 - Return point
+        # 5 - Return point
         return (x_int, y_int)

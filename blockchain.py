@@ -20,9 +20,13 @@ IMPORTS
 '''
 from block import decode_raw_block, Block
 import pandas as pd
+from helpers import get_signature_parts
 from transaction import decode_raw_transaction
 from utxo import decode_raw_input_utxo, decode_raw_output_utxo, UTXO_INPUT, UTXO_OUTPUT
 from cryptography import EllipticCurve
+from wallet import Wallet
+from vli import VLI
+from hashlib import sha256, sha1
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -36,7 +40,9 @@ class Blockchain:
     '''
 
     '''
-    COLUMNS = ['tx_id', 'tx_index', 'amount', 'locking_script']
+    COLUMNS = ['tx_id', 'tx_index', 'amount', 'address']
+    ADDRESS_CHECKSUM_BITS = 32
+    ADDRESS_DIGEST_BITS = 160
 
     def __init__(self, a=None, b=None, p=None):
         '''
@@ -74,38 +80,45 @@ class Blockchain:
         return [self.curve.a, self.curve.b, self.curve.p]
 
     '''
-    UTXO POOL
+    VERIFY SIGNATURE
     '''
 
-    def consume_input(self, utxo_input: UTXO_INPUT) -> bool:
+    def check_address(self, compressed_public_key: str, address: str) -> bool:
         '''
-        For a given UTXO_INPUT, we find the corresponding UTXO_OUTPUT.
-        We then validate the signature against the locking script.
-        If valid, we remove the output utxo from the utxo_pool and return True.
-        If validation fails we return False
+        If we take the "Address Generating" steps with the compressed public key and end up with the given address, we return True.
+        Otherwise return False.
         '''
 
-        # Get tx_id and tx_index for output
-        tx_id = utxo_input.tx_id
-        tx_index = int(utxo_input.tx_index, 16)
+        # 1) Get sha1(sha256(compressed_public_key)) value
+        raw_addy = sha1(sha256(compressed_public_key.encode()).hexdigest().encode()).hexdigest()
 
-        # Find the output signature and public key point
-        output_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
+        # 2) Get checksum
+        checksum = sha256(sha256(raw_addy.encode()).hexdigest().encode()).hexdigest()[: self.ADDRESS_CHECKSUM_BITS // 4]
 
-        # If the output utxo is missing, return False
-        if output_index.empty:
+        # 3) Return True/False
+        return Wallet().int_to_base58(int(raw_addy + checksum, 16)) == address
+
+    def validate_signature(self, input_sig: str, output_addy: str, tx_id: str) -> bool:
+        '''
+        Given the signature in the input utxo and the address in the output utxo, we validate the signature.
+        '''
+
+        # Read in signature
+        compressed_public_key, (r_hex, s_hex) = get_signature_parts(input_sig)
+
+        # Validate address
+        if not self.check_address(compressed_public_key, output_addy):
+            # Logging
+            print('Address error')
             return False
 
-        # Validate the signature, return False if invalid
-        locking_script = self.utxos.loc[output_index]['locking_script'].values[0]
-        pk_point = self.curve.get_public_key_point(locking_script)
-        valid = self.curve.verify_signature(utxo_input.signature, tx_id, pk_point)
-        if not valid:
-            return False
+        # Get public key point, r and s
+        pk_point = self.curve.get_public_key_point(compressed_public_key)
+        r = int(r_hex, 16)
+        s = int(s_hex, 16)
 
-        # Remove the output UTXO
-        self.utxos = self.utxos.drop(self.utxos.index[output_index])
-        return True
+        # Validate signature. Return True/False
+        return self.curve.verify_signature((r, s), tx_id, pk_point)
 
     '''
     ADD BLOCK
@@ -162,18 +175,21 @@ class Blockchain:
                 tx_id = i.tx_id
                 tx_index = int(i.tx_index, 16)
 
-                # Find the output signature and public key point
+                # Find the associated output utxo
                 output_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
 
                 # If the output utxo is missing, return False
                 if output_index.empty:
+                    # Logging
+                    print('Output index empty error')
                     return False
 
-                # Validate the signature, return False if invalid
-                locking_script = self.utxos.loc[output_index]['locking_script'].values[0]
-                pk_point = self.curve.get_public_key_point(locking_script)
-                valid = self.curve.verify_signature(i.signature, tx_id, pk_point)
+                # Validate the input signature against the output address
+                output_address = self.utxos.loc[output_index]['address'].values[0]
+                valid = self.validate_signature(i.signature, tx_id, output_address)
                 if not valid:
+                    # Logging
+                    print('Valid signature error')
                     return False
 
                 # Add the associated amount
@@ -193,11 +209,7 @@ class Blockchain:
             # Add new Output UTXOs - use count for the index
             count = 0
             for t in new_transaction.outputs:
-                temp_amount = t.amount
-                temp_locking_script = t.locking_script
-                tx_id = new_transaction.id
-                tx_index = count
-                new_row = pd.DataFrame([[tx_id, tx_index, temp_amount, temp_locking_script]], columns=self.COLUMNS)
+                new_row = pd.DataFrame([[new_transaction.id, count, t.amount, t.address]], columns=self.COLUMNS)
                 self.utxos = pd.concat([self.utxos, new_row], ignore_index=True)
                 count += 1
 
@@ -250,8 +262,8 @@ class Blockchain:
                 temp_tx = decode_raw_transaction(raw_tx)
                 temp_output = temp_tx.outputs[tx_index]
                 temp_amount = int(temp_output.amount, 16)
-                temp_lockstring = temp_output.locking_script
-                row = pd.DataFrame([[tx_id, tx_index, temp_amount, temp_lockstring]], columns=self.COLUMNS)
+                temp_address = temp_output.address
+                row = pd.DataFrame([[tx_id, tx_index, temp_amount, temp_address]], columns=self.COLUMNS)
                 self.utxos = pd.concat([self.utxos, row], ignore_index=True)
 
         return True
@@ -260,6 +272,6 @@ class Blockchain:
     TESTING
     '''
 
-    def add_output_row(self, tx_id: str, tx_index: int, amount: int, locking_script: str):
-        row = pd.DataFrame([[tx_id, tx_index, amount, locking_script]], columns=self.COLUMNS)
+    def add_output_row(self, tx_id: str, tx_index: int, amount: int, address: str):
+        row = pd.DataFrame([[tx_id, tx_index, amount, address]], columns=self.COLUMNS)
         self.utxos = pd.concat([self.utxos, row], ignore_index=True)

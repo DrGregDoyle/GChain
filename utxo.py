@@ -20,8 +20,8 @@ The UTXO_OUTPUT has the following fields w corresponding size:
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
 #|  amount      |   32          |   8           |   4               |#
-#|  unlock_len  |   VLI         |   VLI         |   VLI             |#
-#|unlock_script |   var         |   var         |   var             |#
+#|  addy_len    |   VLI         |   VLI         |   VLI             |#
+#|  address     |   var         |   var         |   var             |#
 #====================================================================#
 
 
@@ -32,6 +32,7 @@ NB: Both sig_length and unlock_len will be the length in BYTES
 IMPORTS
 '''
 from vli import VLI
+from wallet import Wallet
 
 
 class UTXO_INPUT:
@@ -76,17 +77,15 @@ class UTXO_OUTPUT:
     '''
     AMOUNT_BITS = 32
 
-    def __init__(self, amount: int, locking_script: str):
+    def __init__(self, amount: int, address: str):
         # Format amount
         self.amount = format(amount, f'0{self.AMOUNT_BITS // 4}x')
 
-        # Make sure locking script has full number of bytes
-        self.locking_script = locking_script
-        if len(self.locking_script) % 2 == 1:
-            self.locking_script = '0' + self.locking_script
+        # Save address as hex value
+        self.hex_address = hex(Wallet().base58_to_int(address))[2:]
 
         # Use variable length integer for byte length of signature
-        byte_length = len(self.locking_script) // 2
+        byte_length = len(self.hex_address) // 2
         self.script_length = VLI(byte_length).vli_string
 
     '''
@@ -95,11 +94,15 @@ class UTXO_OUTPUT:
 
     @property
     def raw_utxo(self):
-        return self.amount + self.script_length + self.locking_script
+        return self.amount + self.script_length + self.hex_address
 
     @property
     def byte_size(self):
         return len(self.raw_utxo) // 2
+
+    @property
+    def address(self):
+        return Wallet().int_to_base58(int(self.hex_address, 16))
 
 
 '''
@@ -168,10 +171,10 @@ def decode_raw_output_utxo(output_utxo: str):
 
     # Get the locking script
     index3 = index2 + script_length * 2
-    locking_script = output_utxo[index2: index3]
+    hex_address = output_utxo[index2: index3]
 
     # Create the utxo
-    new_utxo = UTXO_OUTPUT(amount, locking_script)
+    new_utxo = UTXO_OUTPUT(amount, Wallet().int_to_base58(int(hex_address, 16)))
 
     # Verify the script length
     assert int(new_utxo.script_length, 16) == script_length

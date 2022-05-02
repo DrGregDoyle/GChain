@@ -26,9 +26,9 @@ IMPORTS
 '''
 import pandas as pd
 import secrets
-import hashlib
 from hashlib import sha256, sha512, sha1
 from cryptography import EllipticCurve
+from vli import VLI
 
 '''
 CLASS
@@ -75,7 +75,7 @@ class Wallet:
 
         # Use seed to generate keys and seed phrase
         self.master_keys = self.generate_master_keys(seed)
-        self.address = self.get_address(version, address_checksum_bits)
+        self.address = self.get_address(address_checksum_bits)
         self.seed_phrase = self.get_seed_phrase(seed)  # Saving seed_phrase is only for testing.
 
     '''
@@ -99,6 +99,10 @@ class Wallet:
         parity = y % 2
         prefix = format(2 + (1 + pow(-1, parity + 1)) // 2, '02x')
         return prefix + hex(x)[2:]
+
+    @property
+    def hex_address(self):
+        return hex(self.base58_to_int(self.address))[2:]
 
     '''
     SEED PHRASE
@@ -210,14 +214,28 @@ class Wallet:
     ADDRESS
     '''
 
-    def get_address(self, version: int, checksum_bits: int, prefix_bits=8):
+    def get_address(self, checksum_bits: int):
         '''
+        The Wallet address is a user friendly representation of an encoded compressed public key. We twice encode the
+        public key and add a checksum for verification. This yields a hex string we call the "checksum encoded
+        compressed public key (CECPK)." This hex string has an integer value, which we then encode using BASE58
+        encoding - which is an alphabet map for a given reside mod 58 This BASE58 encoding of the checksum encoded
+        compressed public key is the address.
+
+        The address is largely used for display purposes. The UTXO_OUTPUT can be created using the address,
+        but the raw_utxo will contain the CECPK. We note that unlike BITCOIN, we do not use prefixes as we only have
+        one signature scheme.
+
         Using the compressed public key of the wallet, we obtain our address as follows:
             1) Hash the compressed public key using sha256
             2) Hash the result of 1) using SHA-1 - this yields a hex string with 40 characters
-            3) Prepend a 1-byte (2 hex) prefix to 2) - call this the versioned hash
-            4) Sha256 hash the versioned hash twice - take the first "checksum_bits" bits and append to end of versioned hash
-            5) Encode the versioned hash using base58 - encode the prefix separately as it will not necessarily map to the base58 value
+            3) Take the sha256 hash of this hex string. Retrieve the designated number of checksum_bits for the checksum.
+            4) Append the checksum to the end of the string found in 2). THIS IS THE CECPK
+            5) Encode the CECPK in base58 and this is the address.
+
+        Note: As we are using sha1 encoding and 32 checksum bits (4 checksum bytes, 8 hex chars), the CECPK will
+        always be a hex string of 48 characters.
+
         '''
 
         # 1) Hash the compressed public key using sha256
@@ -226,26 +244,13 @@ class Wallet:
         # 2) Hash 1) using sha-1
         hash2 = sha1(hash1.encode()).hexdigest()
 
-        # 3) Prepend a 1-byte prefix to 2)
-        prefix = format(version, f'0{prefix_bits // 4}x')
-        versioned_hash = prefix + hash2
+        # 3 ) Sha256 the versioned_hash twice. Append the first "checksum_bits" bits
+        hash3 = sha256(sha256(hash2.encode()).hexdigest().encode()).hexdigest()
+        checksum = hash3[:checksum_bits // 4]
+        cecpk = hash2 + checksum
 
-        # 4) Sha256 the versioned_hash twice. Append the first "checksum_bits" bits
-        hash4 = sha256(sha256(versioned_hash.encode()).hexdigest().encode()).hexdigest()
-        checksum = hash4[:checksum_bits // 4]
-        versioned_hash += checksum
-
-        # 5) Encode the versioned hash using base58 - prefix will get encoded separately
-        encoded_prefix = self.int_to_base58(int(prefix, 16))
-        encoded_versioned_hash = self.int_to_base58(int(versioned_hash[2:], 16))
-
-        # Verify byte sizes
-        assert len(prefix) == prefix_bits // 4
-        assert len(checksum) == checksum_bits // 4
-        assert len(versioned_hash) - len(prefix) - len(checksum) == 40
-
-        # Return address
-        return encoded_prefix + encoded_versioned_hash
+        # 4) Encode cecpk into base58 string and return
+        return self.int_to_base58(int(cecpk, 16))
 
     '''
     TRANSACTIONS
@@ -259,9 +264,9 @@ class Wallet:
 
     def sign_transaction(self, tx_hash: str):
         '''
-        Given a transaction hash, we return a signature (r,s) following the ECDSA.
+        Given a transaction hash, we return a signature (r,s) following the ECDSA, along with the compressed public key.
         We use the private key of the Wallet in order to sign.
-        We verify that the signature will be successfully validated using the public key
+        We verify that the signature will be successfully validated before returning the signature.
 
         Algorithm:
         ---------
@@ -275,6 +280,13 @@ class Wallet:
         4) Calculate the curve point (x,y) =  k * generator
         5) Compute r = x (mod n) and s = k^(-1)(Z + r * t) (mod n). If either r or s = 0, repeat from step 3.
         6) The signature is the pair (r, s)
+
+        Note: The pair (r,s) is the curve signature for the given tx_id. However, we include the compressed public
+        key in the signature so that it's verification can be self-contained for a known EllipticCurve. For each
+        value, we include a VLI for the length of its hex string. Thus, the signature is of the form:
+
+        COMPRESSED_PUBLIC_KEY_VLI + COMPRESSED_PUBLIC_KEY + R_HEX_VLI + R_HEX + S_HEX_VLI + S_HEX
+
         '''
 
         # 1) Verify that the curve has prime group order
@@ -300,18 +312,19 @@ class Wallet:
             s = (pow(k, -1, n) * (Z + r * private_key)) % n
 
             if r != 0 and s != 0:
+                # Get hex representation
                 h_r = hex(r)[2:]
                 h_s = hex(s)[2:]
 
-                while len(h_r) < self.curve.order.bit_length() // 4:
-                    h_r = '0' + h_r
-                while len(h_s) < self.curve.order.bit_length() // 4:
-                    h_s = '0' + h_s
+                # Get VLI vals for hex strings
+                r_length = VLI(len(h_r)).vli_string
+                s_length = VLI(len(h_s)).vli_string
+                cpk_length = VLI(len(self.compressed_public_key)).vli_string
 
-                sig = h_r + h_s
-                signed = self.curve.verify_signature(sig, tx_hash, self.public_key_point)
+                sig = cpk_length + self.compressed_public_key + r_length + h_r + s_length + h_s
+                signed = self.curve.verify_signature((r, s), tx_hash, self.public_key_point)
 
-        # 6) Return the signature (r,s) as the 128-character hex string r + s
+        # 6) Return the signature
         return sig
 
     '''

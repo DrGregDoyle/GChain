@@ -43,7 +43,11 @@ class Transaction:
 
     def __init__(self, inputs: list, outputs: list, version=1, locktime=0):
         '''
-        The inputs and outputs will be lists of raw utxos
+        A Transaction can be instantiated with either a single output (representing a mining transaction) or a list of inputs and outputs.
+        The elements of each of these lists will be raw utxos - a raw input utxo for an input and a raw output utxo for an output.
+        When instantiated, the UTXOS will be stored as objects, for ease of use.
+
+
         '''
 
         # Format version and locktime
@@ -94,6 +98,13 @@ class Transaction:
     @property
     def byte_size(self):
         return len(self.raw_transaction) // 2
+
+    @property
+    def output_amount(self):
+        total = 0
+        for t in self.outputs:
+            total += int(t.amount, 16)
+        return total
 
 
 '''
@@ -200,7 +211,7 @@ def generate_transaction():
     for t in range(0, output_num):
         w1 = Wallet()
         amount = secrets.randbelow(pow(2, 20))
-        output_utxo = UTXO_OUTPUT(amount, w1.compressed_public_key)
+        output_utxo = UTXO_OUTPUT(amount, w1.address)
         outputs.append(output_utxo.raw_utxo)
 
     new_transaction = Transaction(inputs, outputs)
