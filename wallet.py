@@ -251,6 +251,12 @@ class Wallet:
     TRANSACTIONS
     '''
 
+    def create_transaction(self, address: str, amount: int):
+        '''
+        Will create a transaction
+        '''
+        pass
+
     def sign_transaction(self, tx_hash: str):
         '''
         Given a transaction hash, we return a signature (r,s) following the ECDSA.

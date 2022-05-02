@@ -201,7 +201,7 @@ class Node:
         the output utxos stored in the blockchain is greater than or equal to the total output amount of the
         Transaction outputs. If the total input amount is smaller than the total output amount, we reject the tx.
 
-        With the final check complete, either the tx is added to the validate tx pool or the orphaned tx pool,
+        With the final check complete, either the tx is added to the validated tx pool or the orphaned tx pool,
         depending on the orphan flag.
         '''
 
@@ -226,7 +226,7 @@ class Node:
 
             # If the row exists, validate the input with the output and add the amount
             else:
-                # Incease total_input_amount
+                # Increase total_input_amount
                 amount = self.utxos.loc[input_index]['amount'].values[0]
                 total_input_amount += amount
 
@@ -250,8 +250,6 @@ class Node:
 
             # Add tx to validated tx pool
             self.validated_transactions.append(raw_tx)
-
-            # Check if the new tx
 
         # Flagged for orphaned. Add to orphan pool
         else:
