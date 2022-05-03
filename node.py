@@ -100,19 +100,18 @@ class Node:
         interrupted = False
         while not interrupted:
             # Create Mining Transaction
-            reward = self.get_mining_reward()
-            locking_script = self.wallet.compressed_public_key
-            mining_output = UTXO_OUTPUT(reward, locking_script)
+            mining_amount = self.get_mining_amount()
+            mining_output = UTXO_OUTPUT(mining_amount, self.wallet.address)
             current_height = self.blockchain.height
             mining_transaction = Transaction(inputs=[], outputs=[mining_output.raw_utxo], locktime=current_height + 1)
             self.validated_transactions.insert(0, mining_transaction.raw_transaction)
 
             # Create candidate block
             if self.last_block == []:
-                new_block = Block(1, '', self.get_mining_target(), 0, self.validated_transactions)
+                new_block = Block('', self.get_mining_target(), 0, self.validated_transactions)
             else:
                 last_block = decode_raw_block(self.last_block)
-                new_block = Block(1, last_block.id, self.get_mining_target(), 0, self.validated_transactions)
+                new_block = Block(last_block.id, self.get_mining_target(), 0, self.validated_transactions)
 
             # print(f'Raw new block: {new_block.raw_block}')
 
@@ -131,7 +130,7 @@ class Node:
 
         self.is_mining = False
 
-    def get_mining_reward(self, reward=50):
+    def get_mining_amount(self):
         '''
         The mining reward will be the difference between the sum of all input amounts and the sum of all output
         amounts, plus the reward variable. We also verify that the total_input_amount >= total_output_amount and that
@@ -140,6 +139,7 @@ class Node:
 
         total_input_amount = 0
         total_output_amount = 0
+        reward = self.get_mining_reward()
 
         for t in self.validated_transactions:
             # Recover tx
@@ -159,6 +159,9 @@ class Node:
 
         assert total_input_amount >= total_output_amount
         return reward + (total_input_amount - total_output_amount)
+
+    def get_mining_reward(self):
+        return self.blockchain.determine_reward()
 
     def get_mining_target(self):
         '''
@@ -227,14 +230,12 @@ class Node:
             # If the row exists, validate the input with the output and add the amount
             else:
                 # Increase total_input_amount
-                amount = self.utxos.loc[input_index]['amount'].values[0]
+                amount = int(self.utxos.loc[input_index]['amount'].values[0], 16)
                 total_input_amount += amount
 
                 # Validate the signature
-                locking_script = self.utxos.loc[input_index]['locking_script'].values[0]
-                public_key_point = self.curve.get_public_key_point(locking_script)
-                valid = self.curve.verify_signature(i.signature, tx_id, public_key_point)
-                if not valid:
+                address = self.utxos.loc[input_index]['address'].values[0]
+                if not self.blockchain.validate_signature(i.signature, address, tx_id):
                     return False
 
         # If not flagged for orphaned

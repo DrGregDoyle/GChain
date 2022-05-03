@@ -7,6 +7,7 @@ IMPORTS
 '''
 from vli import VLI
 from hashlib import sha256
+import datetime
 
 
 def get_signature_parts(signature: str, index0=0):
@@ -123,3 +124,19 @@ def base58_to_int(base58_string: str) -> int:
         numeric_val = BASE58_LIST.index(base58_string[x:x + 1])
         sum += numeric_val * pow(58, len(base58_string) - x - 1)
     return sum
+
+
+'''
+Datetime Converter
+'''
+
+
+def utc_to_seconds():
+    date_string = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
+    date_object = datetime.datetime.strptime(date_string, '%Y-%m-%dT%H:%M:%S%z')
+    return int(date_object.timestamp())
+
+
+def seconds_to_utc(seconds: int):
+    date_object = datetime.datetime.utcfromtimestamp(seconds)
+    return date_object.isoformat()

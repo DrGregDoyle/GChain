@@ -121,6 +121,31 @@ class Blockchain:
         return self.curve.verify_signature((r, s), tx_id, pk_point)
 
     '''
+    DETERMINE MINING REWARD
+    '''
+
+    def determine_reward(self):
+        '''
+        Will determine a reward for miners based on the state of the chain
+        '''
+        return 50
+
+    '''
+    CONSUME UTXO INPUTS
+    '''
+
+    def consume_input(self, utxo_input: UTXO_INPUT):
+        '''
+        We consume the corresponding utxo output for a given utxo input.
+        WE DO NO VALIDATION AS THIS IS ONLY CALLED AFTER ALL BLOCK VALIDATION IS DONE
+        '''
+
+        tx_id = utxo_input.tx_id
+        tx_index = int(utxo_input.tx_index, 16)
+        output_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
+        self.utxos = self.utxos.drop(self.utxos.index[output_index])
+
+    '''
     ADD BLOCK
     '''
 
@@ -149,74 +174,67 @@ class Blockchain:
         # Input/Output trackers
         total_input_amount = 0
         total_output_amount = 0
+        mining_amount = 0
 
-        # Iterate over list of raw transactions
-        raw_tx_list = candidate_block.transactions
-        for raw in raw_tx_list:
+        # Consumed UTXO trackers
+        consumed_inputs = []
 
-            # Decode transaction
-            new_transaction = decode_raw_transaction(raw)
+        # Output UTXO temp dataframe
+        output_utxo_df = pd.DataFrame(columns=self.COLUMNS)
 
-            # Get input num
-            input_byte = int(new_transaction.input_num[0:2], 16)
-            input_num = input_byte
-            if input_byte < 253:
-                pass
-            else:
-                input_num = int(new_transaction.input_num[2:], 16)
+        # Iterate over list of Transactions
+        # raw_tx_list = candidate_block.transactions
+        for tx_object in candidate_block.transactions:
 
-            # Verify input num
-            assert input_num == len(new_transaction.inputs)
-
-            # Consume output utxo's
-            for i in new_transaction.inputs:
-
-                # Get tx_id and tx_index for output
+            # Validate the inputs.
+            for i in tx_object.inputs:
+                # Get output UTXO identifying values
                 tx_id = i.tx_id
                 tx_index = int(i.tx_index, 16)
 
-                # Find the associated output utxo
+                # Check that output utxo exists, return False if not
                 output_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
-
-                # If the output utxo is missing, return False
                 if output_index.empty:
                     # Logging
-                    print('Output index empty error')
+                    print('Empty output index error')
                     return False
 
-                # Validate the input signature against the output address
+                # Validate the input utxo signature against the output utxo address
                 output_address = self.utxos.loc[output_index]['address'].values[0]
-                valid = self.validate_signature(i.signature, tx_id, output_address)
-                if not valid:
+
+                if not self.validate_signature(i.signature, output_address, tx_id, ):
                     # Logging
-                    print('Valid signature error')
+                    print('Validate signature error')
                     return False
 
-                # Add the associated amount
+                # Add the amount to total input amount and record as consumed
                 total_input_amount += int(self.utxos.loc[output_index]['amount'].values[0], 16)
+                consumed_inputs.append(i)
 
-                # Remove the output UTXO
-                self.utxos = self.utxos.drop(self.utxos.index[output_index])
-
-            # Get output num
-            first_byte = int(new_transaction.output_num[0:2], 16)
-            output_num = first_byte
-            if first_byte < 253:
-                pass
-            else:
-                output_num = int(new_transaction.output_num[2:], 16)
-
-            # Add new Output UTXOs - use count for the index
+            # Get total output amount and add UTXO to temp dataframe. Use count for output index
             count = 0
-            for t in new_transaction.outputs:
-                new_row = pd.DataFrame([[new_transaction.id, count, t.amount, t.address]], columns=self.COLUMNS)
-                self.utxos = pd.concat([self.utxos, new_row], ignore_index=True)
+            for output_utxo in tx_object.outputs:
+                total_output_amount += int(output_utxo.amount, 16)
+                output_row = pd.DataFrame([[tx_object.id, count, output_utxo.amount, output_utxo.address]],
+                                          columns=self.COLUMNS)
+                output_utxo_df = pd.concat([output_utxo_df, output_row], ignore_index=True)
                 count += 1
 
-            # Verify output utxo num
-            assert output_num == count
+        # Verify total_output_amount = reward + total_input_amount
+        if total_output_amount != self.determine_reward() + total_input_amount:
+            # Logging
+            print('Input/output amount error')
+            return False
 
-        # Add block
+        ##ALL VALIDATION COMPLETE##
+        # Consume inputs
+        for c in consumed_inputs:
+            self.consume_input(c)
+
+        # Add new outputs
+        self.utxos = pd.concat([self.utxos, output_utxo_df], ignore_index=True)
+
+        # Add Block and return True
         self.chain.append(candidate_block.raw_block)
         return True
 
@@ -232,8 +250,8 @@ class Blockchain:
         removed_block = decode_raw_block(self.chain.pop(-1))
 
         # For each transaction, we remove the output utxos from the db and restore the related inputs
-        for t in removed_block.transactions:
-            tx = decode_raw_transaction(t)
+        for tx in removed_block.transactions:
+
             id = tx.id
             output_count = 0
 

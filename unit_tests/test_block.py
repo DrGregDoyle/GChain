@@ -7,7 +7,7 @@ import string
 import numpy as np
 
 from block import Block, utc_to_seconds, seconds_to_utc, decode_raw_block, decode_raw_block_transactions, \
-    decode_raw_header
+    decode_raw_header, decode_raw_transaction
 from transaction import generate_transaction
 from hashlib import sha256
 import datetime
@@ -18,7 +18,7 @@ def test_merkle_root():
     for x in range(0, 3):
         transactions.append(generate_transaction().raw_transaction)
 
-    test_block = Block(0, '', 0, 0, transactions)
+    test_block = Block('', 0, 0, transactions)
 
     tx_ids = test_block.tx_ids
 
@@ -88,7 +88,7 @@ def test_encoding():
     for x in range(0, 3):
         transactions.append(generate_transaction().raw_transaction)
 
-    new_block = Block(random_num1, tx_hash, random_num2, random_num3, transactions)
+    new_block = Block(tx_hash, random_num2, random_num3, transactions, version=random_num1)
     raw_block = new_block.raw_block
     raw_header = new_block.raw_header
     raw_txs = new_block.raw_transactions
@@ -96,6 +96,9 @@ def test_encoding():
     decoded_block = decode_raw_block(raw_block)
     decoded_header = decode_raw_header(raw_header)
     decoded_txs = decode_raw_block_transactions(raw_txs)
+    decoded_tx_ids = []
+    for t in decoded_txs:
+        decoded_tx_ids.append(decode_raw_transaction(t).id)
 
     assert decoded_block.raw_block == raw_block
     assert decoded_block.raw_header == raw_header
@@ -103,4 +106,4 @@ def test_encoding():
     assert decoded_header['version'] == random_num1
     assert decoded_header['target'] == random_num2
     assert decoded_header['nonce'] == random_num3
-    assert decoded_block.transactions == decoded_txs == new_block.transactions
+    assert decoded_tx_ids == new_block.tx_ids == decoded_block.tx_ids
