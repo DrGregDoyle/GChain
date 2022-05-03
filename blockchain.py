@@ -174,6 +174,7 @@ class Blockchain:
         # Input/Output trackers
         total_input_amount = 0
         total_output_amount = 0
+        mining_amount = 0
 
         # Consumed UTXO trackers
         consumed_inputs = []
@@ -217,10 +218,13 @@ class Blockchain:
                 output_row = pd.DataFrame([[tx_object.id, count, output_utxo.amount, output_utxo.address]],
                                           columns=self.COLUMNS)
                 output_utxo_df = pd.concat([output_utxo_df, output_row], ignore_index=True)
+                count += 1
 
-        # Verify total output amount = reward - total input amount
-        # if total_output_amount != self.determine_reward() - total_input_amount:
-        #     return False
+        # Verify total_output_amount = reward + total_input_amount
+        if total_output_amount != self.determine_reward() + total_input_amount:
+            # Logging
+            print('Input/output amount error')
+            return False
 
         ##ALL VALIDATION COMPLETE##
         # Consume inputs

@@ -108,10 +108,10 @@ class Node:
 
             # Create candidate block
             if self.last_block == []:
-                new_block = Block(1, '', self.get_mining_target(), 0, self.validated_transactions)
+                new_block = Block('', self.get_mining_target(), 0, self.validated_transactions)
             else:
                 last_block = decode_raw_block(self.last_block)
-                new_block = Block(1, last_block.id, self.get_mining_target(), 0, self.validated_transactions)
+                new_block = Block(last_block.id, self.get_mining_target(), 0, self.validated_transactions)
 
             # print(f'Raw new block: {new_block.raw_block}')
 
