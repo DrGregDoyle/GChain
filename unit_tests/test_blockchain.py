@@ -57,5 +57,10 @@ def test_utxo_consumption():
     assert len(utxos) == 1
     utxo_index = utxos.index[utxos['tx_id'] == tx.id]
     assert utxos.loc[utxo_index]['address'].values[0] == w.address
-    consumed_index = utxo_index[utxos['tx_id'] == GENESIS_ID]
+    consumed_index = utxos.index[utxos['tx_id'] == GENESIS_ID]
     assert consumed_index.empty
+
+    assert b.pop_block()
+    assert not b.pop_block()
+    b2 = Blockchain()
+    assert b.utxos.equals(b2.utxos)

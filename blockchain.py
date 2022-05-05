@@ -71,10 +71,7 @@ class Blockchain:
 
     @property
     def last_block(self):
-        if self.chain == []:
-            return []
-        else:
-            return self.chain[-1]
+        return self.chain[-1]
 
     @property
     def height(self):
@@ -249,6 +246,11 @@ class Blockchain:
         This will remove the top most block in the chain.
         We reverse the utxo's in the block.
         '''
+        # Don't pop the genesis block
+        if self.height == 0:
+            return False
+
+        # Remove top most block
         removed_block = decode_raw_block(self.chain.pop(-1))
 
         # For each transaction, we remove the output utxos from the db and restore the related inputs
@@ -281,7 +283,7 @@ class Blockchain:
                     count += 1
                 temp_tx = decode_raw_transaction(raw_tx)
                 temp_output = temp_tx.outputs[tx_index]
-                temp_amount = int(temp_output.amount, 16)
+                temp_amount = temp_output.amount
                 temp_address = temp_output.address
                 row = pd.DataFrame([[tx_id, tx_index, temp_amount, temp_address]], columns=self.COLUMNS)
                 self.utxos = pd.concat([self.utxos, row], ignore_index=True)
@@ -297,8 +299,6 @@ class Blockchain:
         genesis_tx = Transaction(inputs=[], outputs=[output_utxo.raw_utxo])
         genesis_block = Block('', self.determine_target(), self.GENESIS_NONCE, [genesis_tx.raw_tx],
                               timestamp=self.GENESIS_TIMESTAMP)
-        # m = Miner()
-        # return m.mine_block(genesis_block.raw_block)
         return genesis_block.raw_block
 
     '''
