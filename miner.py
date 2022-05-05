@@ -6,9 +6,15 @@ The Miner class
 IMPORTS
 '''
 from block import Block, decode_raw_block
+from helpers import utc_to_seconds, seconds_to_utc
+from hashlib import sha256
 
 
 class Miner:
+    '''
+
+    '''
+    HASHRATE_TEST = pow(10, 7)
 
     def __init__(self):
         self.is_mining = False
@@ -39,6 +45,19 @@ class Miner:
             # Logging
             print('Interrupt received by Miner')
             return ''
+
+    def get_hashrate(self):
+        '''
+        '''
+        start_time = utc_to_seconds()
+        for x in range(0, self.HASHRATE_TEST):
+            hash_string = f'Hash string number {x}'
+            print(hash_string, end='\r')
+            sha256(hash_string.encode())
+        end_time = utc_to_seconds()
+        total_seconds = end_time - start_time
+        hash_rate = self.HASHRATE_TEST // total_seconds
+        return hash_rate
 
     def stop_mining(self):
         self.is_mining = False

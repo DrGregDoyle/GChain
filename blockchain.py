@@ -222,7 +222,7 @@ class Blockchain:
                 count += 1
 
         ##ALL VALIDATION COMPLETE##
-        # All inputs validated. Consume them
+        # Consume the inputs
         for c in consumed_inputs:
             self.consume_input(c)
 

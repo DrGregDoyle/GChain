@@ -20,7 +20,9 @@ from utxo import UTXO_OUTPUT, UTXO_INPUT, decode_raw_input_utxo, decode_raw_outp
 from wallet import Wallet
 import threading
 from hashlib import sha256
+from helpers import utc_to_seconds, seconds_to_utc
 import numpy as np
+import socket
 
 '''
 CLASS
@@ -57,6 +59,9 @@ class Node:
         self.validated_transactions = []
         self.orphaned_transactions = []
 
+        # Create Mining stats dict
+        self.mining_stats = {}
+
     '''
     PROPERTIES
     '''
@@ -83,6 +88,12 @@ class Node:
 
     def start_miner(self):
         if not self.is_mining:
+            # Get hash rate before beginning
+            # Logging
+            print('Calculating hashrate')
+            self.mining_stats.update({'hashrate': self.miner.get_hashrate()})
+
+            # Start mining Block in new thread
             self.is_mining = True
             self.mining_thread = threading.Thread(target=self.mine_block)
             self.mining_thread.start()
@@ -118,19 +129,23 @@ class Node:
                 new_block = Block(last_block.id, self.get_mining_target(), 0, self.validated_transactions)
 
             # Mine block
+            start_time = utc_to_seconds()
             mined_raw_block = self.miner.mine_block(new_block.raw_block)
 
             # Add block or interrupt miner
             if mined_raw_block != '':
+                end_time = utc_to_seconds()
+                mining_time = end_time - start_time
                 mined_block = decode_raw_block(mined_raw_block)
                 added = self.add_block(mined_block.raw_block)
                 if added:
                     self.validated_transactions = []
+                    self.mining_stats.update({"mining_time": mining_time})
             else:
                 # Remove mining transaction
                 self.validated_transactions.pop(0)
                 interrupted = True
-
+        # Stop mining if the thread is interrupted
         self.is_mining = False
 
     def get_mining_amount(self):
@@ -271,3 +286,27 @@ class Node:
         for r in orphan_copies:
             self.add_transaction(r)
 
+    '''
+    EVENT LISTENER
+    '''
+
+    def start_event_listener(self):
+        if not self.is_listening:
+            self.is_listening = True
+            self.listening_thread = threading.Thread(target=self.event_listener)
+            self.listening_thread.start()
+
+    def stop_event_listener(self):
+        if self.is_listening:
+            if self.is_mining:
+                self.stop_miner()
+            self.is_listening = False
+            while self.listening_thread.is_alive():
+                pass
+            self.local_node = None
+
+    def event_listener(self):
+        '''
+        '''
+
+        pass
