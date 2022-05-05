@@ -3,37 +3,35 @@ The UTXO classes
 
 We divide the UTXO into two classes: UTXO_INPUT, UTXO_OUTPUT.
 
-The UTXO_INPUT has the following fields w corresponding size:
+The UTXO_INPUT has the following fields w corresponding size:   ~133 bytes
 #====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
 #|  tx_id       |   256         |   64          |   32              |#
-#|  tx_index    |   32          |   8           |   4               |#
-#|  sig_length  |   VLI         |   VLI         |   VLI             |#
-#|  signature   |   var         |   var         |   var             |#
-#|  sequence    |   32          |   8           |   4               |#
+#|  tx_index    |   8           |   2           |   1               |#
+#|  sig length  |   8           |   2           |   1               |#
+#|  signature*  |   ~800        |   ~200        |   ~100            |#
 #====================================================================#
 
 
-The UTXO_OUTPUT has the following fields w corresponding size:
+The UTXO_OUTPUT has the following fields w corresponding size: 33 bytes
 #====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
-#|  amount      |   32          |   8           |   4               |#
-#|  addy_len    |   VLI         |   VLI         |   VLI             |#
-#|  address     |   var         |   var         |   var             |#
+#|  amount      |   64          |   16          |   8               |#
+#|  addy length |   8           |   2           |   1               |#
+#|  address     |   192         |   48          |   24              |#
 #====================================================================#
 
 
-NB: Both sig_length and unlock_len will be the length in BYTES
+
 
 '''
 '''
 IMPORTS
 '''
 from vli import VLI
-from wallet import Wallet
-from helpers import int_to_base58, base58_to_int
+from helpers import int_to_base58, base58_to_int, verify_address_checksum
 
 
 class UTXO_INPUT:
@@ -41,23 +39,18 @@ class UTXO_INPUT:
 
     '''
     TX_ID_BITS = 256
-    TX_INDEX_BITS = 32
-    SEQUENCE_BITS = 32
+    TX_INDEX_BITS = 8
 
-    def __init__(self, tx_id: str, tx_index: int, signature: str, sequence=0xffffffff):
+    def __init__(self, tx_id: str, tx_index: int, signature: str):
         # Format transaction id, index and sequence
-        self.tx_id = format(int(tx_id, 16), f'0{self.TX_ID_BITS // 4}x')
+        self.tx_id = tx_id
+        if len(self.tx_id) != self.TX_ID_BITS // 4:
+            self.tx_id = '0' + self.tx_id
         self.tx_index = format(tx_index, f'0{self.TX_INDEX_BITS // 4}x')
-        self.sequence = format(sequence, f'0{self.SEQUENCE_BITS // 4}x')
 
-        # Get signature length from number of hex chars
+        # Get signature and signature length
         self.signature = signature
-        if len(self.signature) % 2 == 1:
-            self.signature = '0' + self.signature
-
-        # Use variable length integer for byte length of signature
-        byte_length = len(self.signature) // 2
-        self.sig_length = VLI(byte_length).vli_string
+        self.sig_length = format(len(self.signature), '02x')
 
     '''
     Properties
@@ -65,7 +58,7 @@ class UTXO_INPUT:
 
     @property
     def raw_utxo(self):
-        return self.tx_id + self.tx_index + self.sig_length + self.signature + self.sequence
+        return self.tx_id + self.tx_index + self.sig_length + self.signature
 
     @property
     def byte_size(self):
@@ -74,20 +67,23 @@ class UTXO_INPUT:
 
 class UTXO_OUTPUT:
     '''
-
+    The UTXO_OUTPUT object is instantiated by an integer amount and an address.
+    The integer amount will be formatted and saved as hex string.
+    The address is a BASE58 encoded CEPK, and we save both the address and the CEPK.
+    The raw UTXO_OUTPUT object will then be CEPK appended to the formatted amount value.
     '''
-    AMOUNT_BITS = 32
+    AMOUNT_BITS = 64
 
     def __init__(self, amount: int, address: str):
         # Format amount
         self.amount = format(amount, f'0{self.AMOUNT_BITS // 4}x')
 
-        # Save address as hex value
-        self.hex_address = hex(base58_to_int(address))[2:]
+        # Save BASE58 string address
+        self.address = address
 
-        # Use variable length integer for byte length of signature
-        byte_length = len(self.hex_address) // 2
-        self.script_length = VLI(byte_length).vli_string
+        # Get the cepk and addy_length
+        self.cepk = hex(base58_to_int(self.address))[2:]
+        self.addy_length = format(len(self.cepk), '02x')
 
     '''
     Properties
@@ -95,15 +91,11 @@ class UTXO_OUTPUT:
 
     @property
     def raw_utxo(self):
-        return self.amount + self.script_length + self.hex_address
+        return self.amount + self.addy_length + self.cepk
 
     @property
     def byte_size(self):
         return len(self.raw_utxo) // 2
-
-    @property
-    def address(self):
-        return int_to_base58(int(self.hex_address, 16))
 
 
 '''
@@ -116,39 +108,16 @@ def decode_raw_input_utxo(input_utxo: str):
     The string will be given in hex characters and the UTXO_INPUT constants are bit sizes.
     Divide the bit size by 4 to get the number of hex characters
     '''
-    # Create known indices first
-    index1 = UTXO_INPUT.TX_ID_BITS // 4
-    index2 = index1 + UTXO_INPUT.TX_INDEX_BITS // 4
 
-    # Get the hash and index
-    tx_id = input_utxo[:index1]
-    tx_index = int(input_utxo[index1:index2], 16)
+    i1 = UTXO_INPUT.TX_ID_BITS // 4
+    i2 = i1 + UTXO_INPUT.TX_INDEX_BITS // 4
+    i3 = i2 + 2
+    tx_id = input_utxo[:i1]
+    tx_index = int(input_utxo[i1:i2], 16)
+    sig_length = int(input_utxo[i2:i3], 16)
+    sig = input_utxo[i3:i3 + sig_length]
 
-    # Get the variable length integer
-    first_byte = int(input_utxo[index2:index2 + 2], 16)
-    temp_index = index2 + 2
-    if first_byte < 253:
-        sig_length = first_byte
-        index3 = temp_index
-    else:
-        index3 = temp_index + VLI.first_byte_index(first_byte)
-        sig_length = int(input_utxo[temp_index:index3], 16)
-
-    # Get the signature
-    index4 = index3 + sig_length * 2
-    signature = input_utxo[index3:index4]
-
-    # Finally get the sequence
-    sequence = int(input_utxo[index4:index4 + UTXO_INPUT.SEQUENCE_BITS // 4], 16)
-
-    # Create the utxo
-    new_utxo = UTXO_INPUT(tx_id, tx_index, signature, sequence)
-
-    # Verify the sig_length
-    assert int(new_utxo.sig_length, 16) == sig_length
-
-    # Return assembled utxo object
-    return new_utxo
+    return UTXO_INPUT(tx_id, tx_index, sig)
 
 
 def decode_raw_output_utxo(output_utxo: str):
@@ -156,29 +125,11 @@ def decode_raw_output_utxo(output_utxo: str):
     The string will be hex chars and the BIT sizes that aren't variable are in the UTXO_OUTPUT class
     Divide bit size by 4 to get hex chars
     '''
-    # Get amount val
-    index1 = UTXO_OUTPUT.AMOUNT_BITS // 4
-    amount = int(output_utxo[0:index1], 16)
+    i1 = UTXO_OUTPUT.AMOUNT_BITS // 4
+    i2 = i1 + 2
 
-    # Get variable length integer
-    first_byte = int(output_utxo[index1:index1 + 2], 16)
-    temp_index = index1 + 2
-    if first_byte < 253:
-        script_length = first_byte
-        index2 = temp_index
-    else:
-        index2 = temp_index + VLI.first_byte_index(first_byte)
-        script_length = int(output_utxo[temp_index:index2], 16)
+    amount = int(output_utxo[:i1], 16)
+    addy_length = int(output_utxo[i1:i2], 16)
+    address = int_to_base58(int(output_utxo[i2:i2 + addy_length], 16))
 
-    # Get the locking script
-    index3 = index2 + script_length * 2
-    hex_address = output_utxo[index2: index3]
-
-    # Create the utxo
-    new_utxo = UTXO_OUTPUT(amount, int_to_base58(int(hex_address, 16)))
-
-    # Verify the script length
-    assert int(new_utxo.script_length, 16) == script_length
-
-    # Return utxo output object
-    return new_utxo
+    return UTXO_OUTPUT(amount, address)

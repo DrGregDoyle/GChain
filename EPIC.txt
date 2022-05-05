@@ -13,5 +13,8 @@ GCHain stories:
 010: Incorporate the address checksum - check
 011: Put BASE58 encoding outside the Wallet somewhere - check
 012: Change "Locktime" to "first_block" - enable block # checking for UTXO's and transactions
-013: Change Block so that it has transaction objects instead of raw tx's
+013: Change Block so that it has transaction objects instead of raw tx's - check
 014: Modify properties so that only dynamic objects are a property, not static
+015: Come up with better target function
+016: Change UTXO OUTPUT to get rid of VLI
+017: Require that a mining transaction have the block num as locktime value

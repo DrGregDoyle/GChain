@@ -3,20 +3,18 @@ The Transaction class
 
 The Transaction will contain the following fields with assigned sizes:
 
+Max byte size ~ 42kb
 #====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
-#|  version     |   32          |   8           |   4               |#
-#|  input count |   VLI         |   VLI         |   VLI             |#
-#|  inputs      |   var         |   var         |   var             |#
-#|  output count|   VLI         |   VLI         |   VLI             |#
-#|  outputs     |   var         |   var         |   var             |#
-#|  locktime    |   32          |   8           |   4               |#
+#|  input count |   8           |   2           |   1               |#
+#|  inputs      |   var         |   var         |   max ~34kb       |#
+#|  output count|   8           |   2           |   1               |#
+#|  outputs     |   var         |   var         |   max ~8kb        |#
+#|  min height  |   32          |   8           |   4               |#
+#|  version     |   8           |   2           |   1               |#
 #====================================================================#
 
-TODO: Figure out where we verify that total input amount = total output amount
-    -Will be done in the node when validating transactions
-    -Will be done in the blockchain when validating transactions
 '''
 import random
 import string
@@ -38,21 +36,21 @@ class Transaction:
     '''
 
     '''
-    VERSION_BITS = 32
-    LOCKTIME_BITS = 32
+    COUNT_BITS = 8
+    MIN_HEIGHT_BITS = 32
+    VERSION_BITS = 8
 
-    def __init__(self, inputs: list, outputs: list, version=1, locktime=0):
+    def __init__(self, inputs: list, outputs: list, min_height=0, version=1):
         '''
-        A Transaction can be instantiated with either a single output (representing a mining transaction) or a list of inputs and outputs.
-        The elements of each of these lists will be raw utxos - a raw input utxo for an input and a raw output utxo for an output.
-        When instantiated, the UTXOS will be stored as objects, for ease of use.
-
-
+        A Transaction can be instantiated with a list of inputs - which will be a list of raw utxo_input values - and
+        a list of outputs - which will be a list of raw utxo_output values. The minimum height represents the minimum
+        block height in which that Transaction can be saved to the chain. If set to 0, it is valid to be accepted in
+        any Block. This field will be used primarily by mining Transactions, in order to establish its validity. Version we fix to 1 for the time being.
         '''
 
-        # Format version and locktime
+        # Format version and min_height
         self.version = format(version, f'0{self.VERSION_BITS // 4}x')
-        self.locktime = format(locktime, f'0{self.LOCKTIME_BITS // 4}x')
+        self.min_height = format(version, f'0{self.MIN_HEIGHT_BITS // 4}x')
 
         # Iterate over raw input utxo's and store the objects
         self.inputs = []
@@ -66,20 +64,16 @@ class Transaction:
             output_utxo = decode_raw_output_utxo(t)
             self.outputs.append(output_utxo)
 
-        # Get VLI for input count
-        input_count = len(self.inputs)
-        self.input_num = VLI(input_count).vli_string
-
-        # Get VLI for output count
-        output_count = len(self.outputs)
-        self.output_num = VLI(output_count).vli_string
+        # Get hex string for counts
+        self.input_num = format(len(self.inputs), f'0{self.COUNT_BITS // 4}x')
+        self.output_num = format(len(self.outputs), f'0{self.COUNT_BITS // 4}x')
 
     '''
     PROPERTIES
     '''
 
     @property
-    def raw_transaction(self):
+    def raw_tx(self):
         input_string = ''
         output_string = ''
 
@@ -89,22 +83,15 @@ class Transaction:
         for t in self.outputs:
             output_string += t.raw_utxo
 
-        return self.version + self.input_num + input_string + self.output_num + output_string + self.locktime
+        return self.input_num + input_string + self.output_num + output_string + self.min_height + self.version
 
     @property
     def id(self):
-        return sha256(self.raw_transaction.encode()).hexdigest()
+        return sha256(self.raw_tx.encode()).hexdigest()
 
     @property
     def byte_size(self):
-        return len(self.raw_transaction) // 2
-
-    @property
-    def output_amount(self):
-        total = 0
-        for t in self.outputs:
-            total += int(t.amount, 16)
-        return total
+        return len(self.raw_tx) // 2
 
 
 '''
@@ -116,57 +103,41 @@ def decode_raw_transaction(raw_tx: str) -> Transaction:
     '''
     We decode the raw transaction using the raw_tx string and bit constants.
     '''
+    # Set index variables
+    count_index = Transaction.COUNT_BITS // 4
+    min_height_index = Transaction.MIN_HEIGHT_BITS // 4
+    version_index = Transaction.VERSION_BITS // 4
+
+    # Get input num
+    input_num = int(raw_tx[:count_index], 16)
+
+    # Get inputs
+    inputs = []
+    temp_index = count_index  # We use temp_index as the shifting string index throughout
+    for x in range(0, input_num):
+        raw_input_utxo = decode_raw_input_utxo(raw_tx[temp_index:]).raw_utxo
+        inputs.append(raw_input_utxo)
+        temp_index += len(raw_input_utxo)
+
+    # Get output num
+    output_num = int(raw_tx[temp_index: temp_index + count_index], 16)
+
+    # Get outputs
+    outputs = []
+    temp_index += count_index
+    for y in range(0, output_num):
+        raw_output_utxo = decode_raw_output_utxo(raw_tx[temp_index:]).raw_utxo
+        outputs.append(raw_output_utxo)
+        temp_index += len(raw_output_utxo)
+
+    # Get min height
+    min_height = int(raw_tx[temp_index: temp_index + min_height_index], 16)
+    temp_index += min_height_index
 
     # Get version
-    index1 = Transaction.VERSION_BITS // 4
-    version = int(raw_tx[0:index1], 16)
+    version = int(raw_tx[temp_index:temp_index + version_index], 16)
 
-    # Get number of inputs
-    first_byte_input = int(raw_tx[index1:index1 + 2], 16)
-    temp_index_input = index1 + 2
-    if first_byte_input < 253:
-        input_num = first_byte_input
-        index2 = temp_index_input
-    else:
-        index2 = temp_index_input + VLI.first_byte_index(first_byte_input)
-        input_num = int(raw_tx[temp_index_input:index2], 16)
-
-    # Get all inputs
-    inputs = []
-    for x in range(0, input_num):
-        input_utxo = decode_raw_input_utxo(raw_tx[index2:])
-        index2 += input_utxo.byte_size * 2
-        inputs.append(input_utxo.raw_utxo)
-
-    # Get number of outputs
-    first_byte_output = int(raw_tx[index2:index2 + 2], 16)
-    temp_index_output = index2 + 2
-    if first_byte_output < 253:
-        output_num = first_byte_output
-        index3 = temp_index_output
-    else:
-        index3 = temp_index_output + VLI.first_byte_index(first_byte_output)
-        output_num = int(raw_tx[temp_index_output:index3], 16)
-
-    # Get all outputs
-    outputs = []
-    for x in range(0, output_num):
-        output_utxo = decode_raw_output_utxo(raw_tx[index3:])
-        index3 += output_utxo.byte_size * 2
-        outputs.append(output_utxo.raw_utxo)
-
-    # Get locktime
-    locktime = int(raw_tx[index3: index3 + Transaction.LOCKTIME_BITS // 4], 16)
-
-    # Create transaction
-    new_transaction = Transaction(inputs=inputs, outputs=outputs, version=version, locktime=locktime)
-
-    # Verify input and output num
-    assert int(new_transaction.input_num, 16) == input_num
-    assert int(new_transaction.output_num, 16) == output_num
-
-    # Return transaction
-    return new_transaction
+    return Transaction(inputs=inputs, outputs=outputs, min_height=min_height, version=version)
 
 
 '''
@@ -178,41 +149,32 @@ import numpy as np
 
 def generate_transaction():
     '''
-    We generate a random transaction
+    We create a random number of inputs and outputs and create a Transaction from this.
     '''
-
-    # Generate a non-zero random number of inputs
+    # Create inputs
     inputs = []
     input_num = 0
     while input_num == 0:
         input_num = np.random.randint(10)
-
-    for i in range(0, input_num):
-        w = Wallet()
-        string_length = 0
-        while string_length == 0:
-            string_length = np.random.randint(256)
+    for x in range(0, input_num):
         random_string = ''
-        for s in range(0, string_length):
+        for r in range(0, np.random.randint(100)):
             random_string += random.choice(string.ascii_letters)
-
         tx_id = sha256(random_string.encode()).hexdigest()
-        index = secrets.randbelow(pow(2, 10))
-        sig = w.sign_transaction(tx_id)
-        input_utxo = UTXO_INPUT(tx_id, index, sig)
-        inputs.append(input_utxo.raw_utxo)
+        tx_index = np.random.randint(100)
+        sig = Wallet().sign_transaction(tx_id)
+        inputs.append(UTXO_INPUT(tx_id, tx_index, sig).raw_utxo)
 
-    # Generate a non-zero random number of outputs
+    # Create outputs
     outputs = []
     output_num = 0
     while output_num == 0:
         output_num = np.random.randint(10)
+    for y in range(0, output_num):
+        amount = np.random.randint(1000)
+        temp_wallet = Wallet()
+        address = temp_wallet.address
+        utxo_output = UTXO_OUTPUT(amount, address)
+        outputs.append(utxo_output.raw_utxo)
 
-    for t in range(0, output_num):
-        w1 = Wallet()
-        amount = secrets.randbelow(pow(2, 20))
-        output_utxo = UTXO_OUTPUT(amount, w1.address)
-        outputs.append(output_utxo.raw_utxo)
-
-    new_transaction = Transaction(inputs, outputs)
-    return new_transaction
+    return Transaction(inputs=inputs, outputs=outputs)

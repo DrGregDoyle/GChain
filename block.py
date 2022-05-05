@@ -5,26 +5,23 @@ The Block HEADER will contain the following fields with assigned sizes:
 #====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
-#|  version     |   32          |   8           |   4               |#
+#|  version     |   8           |   2           |   1               |#
 #|  prev_hash   |   256         |   64          |   32              |#
 #|  merkle_root |   256         |   64          |   32              |#
-#|  timestamp   |   32          |   8           |   4               |#
 #|  target      |   32          |   8           |   4               |#
 #|  nonce       |   32          |   8           |   4               |#
+#|  timestamp   |   32          |   8           |   4               |#
 #====================================================================#
 
 The Block TRANSACTIONS will contain the following fields with assigned sizes:
 #====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
-#|  tx_num      |   VLI         |   VLI         |   VLI             |#
+#|  tx_num      |   32          |   8           |   4               |#
 #|  transactions|   var         |   var         |   var             |#
 #====================================================================#
 
-The RAW block will be the hex strings of the header, followed by the tx_num VLI and the concatenation of all raw
-transactions.
 
-TODO: Make BIT LENGTH values standard, depending on a common bit length (either from the prime or dominant hash function)
 
 '''
 
@@ -40,12 +37,12 @@ class Block:
     '''
 
     '''
-    VERSION_BITS = 32
-    PREV_HASH_BITS = 256
-    MERKLE_ROOT_BITS = 256
-    TIMESTAMP_BITS = 32
-    NONCE_BITS = 32
+    HASH_BITS = 256
+    VERSION_BITS = 8
     TARGET_BITS = 32
+    NONCE_BITS = 32
+    TIMESTAMP_BITS = 32
+    TRANSACTION_NUM_BITS = 32
 
     def __init__(self, prev_hash: str, target: int, nonce: int, transactions: list, timestamp=None, version=1):
         '''
@@ -75,19 +72,18 @@ class Block:
             new_tx = decode_raw_transaction(raw_tx)
             self.transactions.append(new_tx)
 
+        # Create and format number of transactions
+        self.tx_count = format(len(self.transactions), f'0{self.TRANSACTION_NUM_BITS // 4}x')
+
         # Calculate merkle root
         self.merkle_root = self.calc_merkle_root()
 
-        # Ensure merkle_root and prev_hash are 256-bits
+        # Ensure merkle_root and prev_hash are 256-bits/64 characters
         self.prev_hash = prev_hash
-        while len(self.prev_hash) != self.PREV_HASH_BITS // 4:
+        while len(self.prev_hash) != self.HASH_BITS // 4:
             self.prev_hash = '0' + self.prev_hash
-        while len(self.merkle_root) != self.MERKLE_ROOT_BITS // 4:
+        while len(self.merkle_root) != self.HASH_BITS // 4:
             self.merkle_root = '0' + self.merkle_root
-
-        # Calculate VLI based on number of transactions
-        tx_count = len(self.transactions)
-        self.tx_count = VLI(tx_count).vli_string
 
     '''
     PROPERTIES
@@ -99,13 +95,13 @@ class Block:
 
     @property
     def raw_header(self):
-        return self.version + self.prev_hash + self.merkle_root + self.timestamp + self.target + self.nonce
+        return self.version + self.prev_hash + self.merkle_root + self.target + self.nonce + self.timestamp
 
     @property
     def raw_transactions(self):
         transaction_string = ''
         for t in self.transactions:
-            transaction_string += t.raw_transaction
+            transaction_string += t.raw_tx
         return self.tx_count + transaction_string
 
     @property
@@ -114,10 +110,6 @@ class Block:
         for t in self.transactions:
             id_list.append(t.id)
         return id_list
-
-    @property
-    def tx_count_as_int(self):
-        return int(self.tx_count, 16)
 
     @property
     def id(self):
@@ -231,9 +223,9 @@ class Block:
     def get_raw_tx(self, tx_id: str):
         try:
             index = self.tx_ids.index(tx_id)
+            return self.transactions[index]
         except TypeError:
             return ''
-        return self.transactions[index]
 
 
 '''
@@ -247,7 +239,7 @@ def decode_raw_block(raw_block: str):
     '''
 
     # Get number of hex chars
-    header_hexchars = (Block.VERSION_BITS + Block.PREV_HASH_BITS + Block.MERKLE_ROOT_BITS
+    header_hexchars = (Block.VERSION_BITS + Block.HASH_BITS + Block.HASH_BITS
                        + Block.TIMESTAMP_BITS + Block.TARGET_BITS + Block.NONCE_BITS) // 4
 
     # Break up string into header and transaction
@@ -275,23 +267,23 @@ def decode_raw_header(raw_hdr: str):
     '''
     # Determine block indices
     index1 = Block.VERSION_BITS // 4
-    index2 = index1 + Block.PREV_HASH_BITS // 4
-    index3 = index2 + Block.MERKLE_ROOT_BITS // 4
-    index4 = index3 + Block.TIMESTAMP_BITS // 4
-    index5 = index4 + Block.TARGET_BITS // 4
-    index6 = index5 + Block.NONCE_BITS // 4
+    index2 = index1 + Block.HASH_BITS // 4
+    index3 = index2 + Block.HASH_BITS // 4
+    index4 = index3 + Block.TARGET_BITS // 4
+    index5 = index4 + Block.NONCE_BITS // 4
+    index6 = index5 + Block.TIMESTAMP_BITS // 4
 
     # Get variables from string in proper type
     version = int(raw_hdr[:index1], 16)
     prev_hash = raw_hdr[index1:index2]
     merkle_root = raw_hdr[index2:index3]
-    timestamp = int(raw_hdr[index3:index4], 16)
-    target = int(raw_hdr[index4:index5], 16)
-    nonce = int(raw_hdr[index5:index6], 16)
+    target = int(raw_hdr[index3:index4], 16)
+    nonce = int(raw_hdr[index4:index5], 16)
+    timestamp = int(raw_hdr[index5:index6], 16)
 
     # Return dictionary with corresponding values
-    return {"version": version, "prev_hash": prev_hash, "merkle_root": merkle_root, "timestamp": timestamp,
-            "target": target, "nonce": nonce}
+    return {"version": version, "prev_hash": prev_hash, "merkle_root": merkle_root,
+            "target": target, "nonce": nonce, "timestamp": timestamp}
 
 
 def decode_raw_block_transactions(raw_block_tx: str) -> list:
@@ -301,21 +293,14 @@ def decode_raw_block_transactions(raw_block_tx: str) -> list:
     a Block
     '''
     # Get number of transactions
-    first_byte = int(raw_block_tx[:2], 16)
-    temp_index = 2
-    if first_byte < 253:
-        input_num = first_byte
-        tx_index = temp_index
-    else:
-        tx_index = temp_index + VLI.first_byte_index(first_byte)
-        input_num = int(raw_block_tx[temp_index:tx_index], 16)
+    tx_num = int(raw_block_tx[:Block.TRANSACTION_NUM_BITS // 4])
 
     # Read in transactions
     transactions = []
-    temp_index = tx_index
-    for x in range(0, input_num):
+    temp_index = Block.TRANSACTION_NUM_BITS // 4
+    for x in range(0, tx_num):
         new_transaction = decode_raw_transaction(raw_block_tx[temp_index:])
-        transactions.append(new_transaction.raw_transaction)
+        transactions.append(new_transaction.raw_tx)
         temp_index = temp_index + new_transaction.byte_size * 2
 
     return transactions

@@ -1,35 +1,41 @@
 '''
 The Wallet class
 
--The wallet will generate ECC keys upon instantiation.
--The address will be related to the locking/unlocking script used in the utxos
+-The wallet will generate ECC keys upon instantiation. The private key will be a random integer K and the public key
+will be the point K*G = (x,y) on the elliptic curve of the respective blockchain, where G is the generator point.
 
-NOTE ON RIPEMD:
-    -The ripemd only seems to work through the update function
-    -This means for a proper hash, we need to generate a new ripemd160 hash object each time
+-The address will be a BASE58 encoding of a certain hex string resulting from a sequence of hashes on the compressed
+public key. A user can prove his compressed public key yields a given address by performing the same hash sequences.
 
+-The signature will be with respect to a transaction id tx_id. It will be the compressed public key along with the
+integer pair (r,s) expressed in hex, as described in the ECDSA. We include a 1 byte variable to track the length of
+the hex strings.
 
-TODO: Allow for dynamically generated addresses from the master keys
-
-TODO: Pull a dictionary from a web api for the seed phrase
-
-TODO: Add prefix mapping function for address creation - the prefix will tie into the locking/unlocking script
-
-TODO: Add the curve creation during instantiation depending on the connection to the blockchain. (Either that or
-have curve coeff pouches or something.)
-
+SIGNATURE ~100 bytes
+#====================================================================#
+#|  field       |   bit size    |   hex chars   |   byte size       |#
+#====================================================================#
+#   cpk length  |   8           |   2           |   1               |#
+#   cpk*        |   258         |   66          |   ~33             |#
+#   r length    |   8           |   2           |   1               |#
+#   r           |   256         |   64          |   32              |#
+#   s length    |   8           |   2           |   1               |#
+#   s           |   256         |   64          |   32              |#
+#====================================================================#
 
 
 '''
+
 '''
 IMPORTS
 '''
+
+from cryptography import EllipticCurve
+from hashlib import sha256, sha512, sha1
+from helpers import base58_to_int, int_to_base58
+
 import pandas as pd
 import secrets
-from hashlib import sha256, sha512, sha1
-from cryptography import EllipticCurve
-from vli import VLI
-from helpers import base58_to_int, int_to_base58
 
 '''
 CLASS
@@ -43,9 +49,7 @@ class Wallet:
     MINBIT_EXP = 7
     DICT_EXP = 11
 
-    def __init__(self, seed_bits=128, address_checksum_bits=32, version=0, seed=None, a=None,
-                 b=None,
-                 p=None):
+    def __init__(self, seed_bits=128, address_checksum_bits=32, seed=None, a=None, b=None, p=None):
         '''
         
         '''
@@ -59,6 +63,7 @@ class Wallet:
             if (self.seed_bits + x) % self.DICT_EXP == 0:
                 self.seed_checksum_bits = x
 
+        # TODO: Remove assert in init, replace with factory method
         assert (self.seed_bits + self.seed_checksum_bits) % self.DICT_EXP == 0
 
         # Create new seed or use given seen
@@ -92,7 +97,8 @@ class Wallet:
         x, y = self.public_key_point
         parity = y % 2
         prefix = format(2 + (1 + pow(-1, parity + 1)) // 2, '02x')
-        return prefix + hex(x)[2:]
+        h_x = hex(x)[2:]
+        return prefix + h_x
 
     @property
     def hex_address(self):
@@ -212,35 +218,33 @@ class Wallet:
         '''
         The Wallet address is a user friendly representation of an encoded compressed public key. We first encode the
         compressed public key using sha256 and subsequently encode the result using sha1. This yields a 40 character
-        hex string we call the encoded compressed public key (ECPK). We then create a checksum by twice encoding the
-        ECPK using sha256, and taking the first checksum_bits//4 characters. This checksum is appended to the ECPK in
-        order to create the hex string we call the checksum encoded compressed public key (CECPK). Finally,
-        the CECPK is BASE58 encoded and returned as address.
+        hex string we call the encoded public key (EPK). We then create a checksum by twice encoding the
+        EPK using sha256, and taking the first checksum_bits//4 hex characters. This checksum is appended to the EPK in
+        order to create the hex string we call the checksum encoded public key (CEPK). Finally,
+        the CEPK is BASE58 encoded and returned as address.
 
 
         The address is largely used for display purposes. The UTXO_OUTPUT can be created using the address,
-        but the raw_utxo will contain the CECPK. We note that unlike BITCOIN, we do not use prefixes as we only have
+        but the raw_utxo will contain the CEPK. We note that unlike BITCOIN, we do not use prefixes as we only have
         one signature scheme.
 
         Using the compressed public key of the wallet, we obtain our address as follows:
-            1) Take the SHA1 encoding of the SHA256 encoding of the compressed public key. This is the ECPK.
-            2) Take the first checksum_bits//4 characters of the SHA256 encoding of the SHA256 encoding of the ECPK. This is the checksum. Append to the ECPK to make the CECPK.
-            3) Return the BASE58 encoding of the CECPK.
-
-        Note: As we are using sha1 encoding and 32 checksum bits (4 checksum bytes, 8 hex chars), the CECPK will
-        always be a hex string of 48 characters.
+            1) Take the SHA1 encoding of the SHA256 encoding of the compressed public key. This is the EPK.
+            2) Take the first checksum_bits//4 hex characters of the SHA256 encoding of the SHA256 encoding of the EPK.
+            This is the checksum. Then CEPK = EPK + checksum
+            3) Return the BASE58 encoding of the CEPK.
 
         '''
 
-        # 1) Get the ECPK
-        ecpk = sha1(sha256(self.compressed_public_key.encode()).hexdigest().encode()).hexdigest()
+        # 1) Get the EPK
+        epk = sha1(sha256(self.compressed_public_key.encode()).hexdigest().encode()).hexdigest()
 
-        # 2 ) Get the checksum and create the CECPK
-        checksum = sha256(sha256(ecpk.encode()).hexdigest().encode()).hexdigest()[:checksum_bits // 4]
-        cecpk = ecpk + checksum
+        # 2 ) Get the checksum and create the CEPK
+        checksum = sha256(sha256(epk.encode()).hexdigest().encode()).hexdigest()[:checksum_bits // 4]
+        cepk = epk + checksum
 
-        # 3) Return the BASE58 encoding of the cecpk
-        return int_to_base58(int(cecpk, 16))
+        # 3) Return the BASE58 encoding of the CEPK
+        return int_to_base58(int(cepk, 16))
 
     '''
     TRANSACTIONS
@@ -272,14 +276,15 @@ class Wallet:
         6) The signature is the pair (r, s)
 
         Note: The pair (r,s) is the curve signature for the given tx_id. However, we include the compressed public
-        key in the signature so that it's verification can be self-contained for a known EllipticCurve. For each
-        value, we include a VLI for the length of its hex string. Thus, the signature is of the form:
-
-        COMPRESSED_PUBLIC_KEY_VLI + COMPRESSED_PUBLIC_KEY + R_HEX_VLI + R_HEX + S_HEX_VLI + S_HEX
+        key in the signature so that it's verification can be self-contained for a known EllipticCurve. Observe that
+        p is a 256-bit prime, and hence this can be represented by a hexadecimal string of length 64. Thus for the
+        ECDSA signature, the pair (r,s) will be each given by a hex string of length 64. Further, the signature will
+        contain the compressed public key, which will be given by a hex string of length 66. Thus, the signature will be a hex string of exactly 194 characters.
 
         '''
 
         # 1) Verify that the curve has prime group order
+        # TODO: Remove curve.has_prime_order - prime should be taken from the Blockchain
         assert self.curve.has_prime_order
         n = self.curve.order
 
@@ -306,51 +311,12 @@ class Wallet:
                 h_r = hex(r)[2:]
                 h_s = hex(s)[2:]
 
-                # Get VLI vals for hex strings
-                r_length = VLI(len(h_r)).vli_string
-                s_length = VLI(len(h_s)).vli_string
-                cpk_length = VLI(len(self.compressed_public_key)).vli_string
+                r_length = format(len(h_r), '02x')
+                s_length = format(len(h_s), '02x')
+                cpk_length = format(len(self.compressed_public_key), '02x')
 
                 sig = cpk_length + self.compressed_public_key + r_length + h_r + s_length + h_s
                 signed = self.curve.verify_signature((r, s), tx_hash, self.public_key_point)
 
         # 6) Return the signature
         return sig
-
-    # '''
-    # BASE58
-    # '''
-    #
-    # def int_to_base58(self, num: int) -> str:
-    #     '''
-    #     Explanation here
-    #     '''
-    #     base58_string = ''
-    #     num_copy = num
-    #     # If num_copy is negative, keep adding 58 until it isn't
-    #     # Negative numbers will always result in a single residue
-    #     # Maybe think about returning error. No negative integer should ever be used.
-    #     while num_copy < 0:
-    #         num_copy += 58
-    #     if num_copy == 0:
-    #         base58_string = '1'
-    #     else:
-    #         while num_copy > 0:
-    #             remainder = num_copy % 58
-    #             base58_string = self.BASE58_LIST[remainder] + base58_string
-    #             num_copy = num_copy // 58
-    #     return base58_string
-    #
-    # def base58_to_int(self, base58_string: str) -> int:
-    #     '''
-    #     To convert a base58 string back to an int:
-    #         -For each character, find the numeric index in the list
-    #         -Multiply this numeric value by a corresponding power of 58
-    #         -Sum all values
-    #     '''
-    #
-    #     sum = 0
-    #     for x in range(0, len(base58_string)):
-    #         numeric_val = self.BASE58_LIST.index(base58_string[x:x + 1])
-    #         sum += numeric_val * pow(58, len(base58_string) - x - 1)
-    #     return sum
