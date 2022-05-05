@@ -57,18 +57,7 @@ class Miner:
         end_time = utc_to_seconds()
         total_seconds = end_time - start_time
         hash_rate = self.HASHRATE_TEST // total_seconds
-        kilo = hash_rate / pow(10, 3)
-        mega = hash_rate / pow(10, 6)
-        giga = hash_rate / pow(10, 9)
-        hash_dict = {
-            'kilo': format(kilo, '0.04f'),
-            'mega': format(mega, '0.04f'),
-            'giga': format(giga, '0.04f')
-        }
-        # print(f'{hash_dict["kilo"]} kH/s')
-        # print(f'{hash_dict["mega"]} MH/s')
-        # print(f'{hash_dict["giga"]} GH/s')
-        return hash_rate, hash_dict
+        return hash_rate
 
     def stop_mining(self):
         self.is_mining = False
