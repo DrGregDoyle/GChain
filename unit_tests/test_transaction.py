@@ -1,7 +1,9 @@
 '''
 Testing transactions
 '''
-
+import random
+import string
+import numpy as np
 from transaction import Transaction, decode_raw_transaction
 from utxo import UTXO_OUTPUT, UTXO_INPUT
 import secrets
@@ -10,34 +12,36 @@ from wallet import Wallet
 
 
 def test_raw_transaction():
-    tx_id = sha256('Transaction'.encode()).hexdigest()
-    tx_index = 0
-    sig_script = hex(secrets.randbits(288))[2:]
-    sequence = 0xffffffff
-    input_utxo = UTXO_INPUT(tx_id, tx_index, sig_script, sequence)
+    w1 = Wallet()
+    w2 = Wallet()
+    w3 = Wallet()
+    w4 = Wallet()
+    random_string_1 = ''
+    random_string_2 = ''
+    for x in range(0, np.random.randint(100)):
+        random_string_1 += random.choice(string.ascii_letters)
+    for x in range(0, np.random.randint(100)):
+        random_string_2 += random.choice(string.ascii_letters)
 
+    tx_id1 = sha256(random_string_1.encode()).hexdigest()
+    tx_index1 = 0
+    sig1 = w1.sign_transaction(tx_id1)
+    input_utxo1 = UTXO_INPUT(tx_id1, tx_index1, sig1)
+
+    tx_id2 = sha256(random_string_2.encode()).hexdigest()
     tx_index2 = 1
-    sig_script2 = hex(secrets.randbits(140))[2:]
-    input_utxo2 = UTXO_INPUT(tx_id, tx_index2, sig_script2, sequence)
+    sig2 = w2.sign_transaction(tx_id2)
+    input_utxo2 = UTXO_INPUT(tx_id2, tx_index2, sig2)
 
-    amount = secrets.randbelow(1000)
-    unlock_script = Wallet().address
-    output_utxo = UTXO_OUTPUT(amount, unlock_script)
+    output_utxo1 = UTXO_OUTPUT(secrets.randbelow(1000), w3.address)
+    output_utxo2 = UTXO_OUTPUT(secrets.randbelow(1000), w4.address)
 
-    amount2 = secrets.randbelow(4000)
-    unlock_script2 = Wallet().address
-    output_utxo2 = UTXO_OUTPUT(amount2, unlock_script2)
+    inputs = [input_utxo1.raw_utxo]
+    outputs = [output_utxo1.raw_utxo]
 
-    version = 1
-    input_count = 2
-    inputs = [input_utxo.raw_utxo, input_utxo2.raw_utxo]
-    output_count = 2
-    outputs = [output_utxo.raw_utxo, output_utxo2.raw_utxo]
-    locktime = secrets.randbits(Transaction.LOCKTIME_BITS)
-
-    t = Transaction(inputs=inputs, outputs=outputs, version=version, locktime=locktime)
-    raw = t.raw_transaction
+    t = Transaction(inputs=inputs, outputs=outputs)
+    raw = t.raw_tx
     new_t = decode_raw_transaction(raw)
 
-    assert new_t.raw_transaction == raw
+    assert new_t.raw_tx == raw
     assert new_t.id == t.id

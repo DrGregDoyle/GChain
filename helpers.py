@@ -10,57 +10,18 @@ from hashlib import sha256
 import datetime
 
 
-def get_signature_parts(signature: str, index0=0):
+def get_signature_parts(signature: str):
     '''
     A static method to read in a signature. We return the hex string values of the compressed public key and (r,s).
     '''
+    cpk_length = int(signature[:2], 16)
+    cpk = signature[2:2 + cpk_length]
+    r_length = int(signature[2 + cpk_length:4 + cpk_length], 16)
+    r = signature[4 + cpk_length:4 + cpk_length + r_length]
+    s_length = int(signature[4 + cpk_length + r_length:6 + cpk_length + r_length], 16)
+    s = signature[6 + cpk_length + r_length:6 + cpk_length + r_length + s_length]
 
-    # Read in compressed public key VLI
-    index1 = index0 + 2
-    cpk_first_byte = signature[index0:index1]
-
-    if int(cpk_first_byte, 16) < 253:
-        cpk_length = int(cpk_first_byte, 16)
-    else:
-        index_adjust = VLI.first_byte_index(int(cpk_first_byte, 16))
-        cpk_length = int(signature[index1:index1 + index_adjust], 16)
-        index1 = index1 + index_adjust
-
-    # Read in compressed public key
-    index2 = index1 + cpk_length
-    compressed_public_key = signature[index1: index2]
-
-    # Read in r VLI
-    index3 = index2 + 2
-    r_first_byte = signature[index2:index3]
-
-    if int(r_first_byte, 16) < 253:
-        r_length = int(r_first_byte, 16)
-    else:
-        r_index_adjust = VLI.first_byte_index(int(r_first_byte, 16))
-        r_length = int(signature[index3:index3 + r_index_adjust])
-        index3 = index3 + r_index_adjust
-
-    # Read in r as hex string
-    index4 = index3 + r_length
-    r_hex = signature[index3:index4]
-
-    # Read in s VLI
-    index5 = index4 + 2
-    s_first_byte = signature[index4:index5]
-
-    if int(s_first_byte, 16) < 253:
-        s_length = int(s_first_byte, 16)
-    else:
-        s_index_adjust = VLI.first_byte_index(int(s_first_byte, 16))
-        s_length = int(signature[index5:index5 + s_index_adjust])
-        index5 = index5 + s_index_adjust
-
-    # Read in s
-    index6 = index5 + s_length
-    s_hex = signature[index5:index6]
-
-    return compressed_public_key, (r_hex, s_hex)
+    return cpk, (r, s)
 
 
 def verify_address_checksum(address: str, ADDRESS_DIGEST_BITS=160, CHECKSUM_BITS=32) -> bool:
@@ -69,14 +30,16 @@ def verify_address_checksum(address: str, ADDRESS_DIGEST_BITS=160, CHECKSUM_BITS
     '''
 
     # Get hex string
-    hex_address = base58_to_int(address)
+    hex_address = hex(base58_to_int(address))[2:]
+    if len(hex_address) != ADDRESS_DIGEST_BITS // 4 + CHECKSUM_BITS // 4:
+        hex_address = '0' + hex_address
 
     # Get address digest
     digest = hex_address[:ADDRESS_DIGEST_BITS // 4]
     checksum = hex_address[ADDRESS_DIGEST_BITS // 4: CHECKSUM_BITS // 4]
 
     # Find the checksum from the digest
-    digest_checksum = sha256(sha256(digest.encode()).hexdigest()).hexdigest()[:CHECKSUM_BITS // 4]
+    digest_checksum = sha256(sha256(digest.encode()).hexdigest().encode()).hexdigest()[:CHECKSUM_BITS // 4]
 
     return digest_checksum == checksum
 

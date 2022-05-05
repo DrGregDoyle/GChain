@@ -1,20 +1,25 @@
 '''
 UTXO Testing
 '''
-
+import random
+import string
 from hashlib import sha256
 from utxo import UTXO_INPUT, UTXO_OUTPUT, decode_raw_input_utxo, decode_raw_output_utxo
 import secrets
 from wallet import Wallet
+import numpy as np
 
 
 def test_raw_utxo():
-    random_bits = secrets.randbelow(1024)
-    tx_id = sha256('Transaction'.encode()).hexdigest()
+    w = Wallet()
+    random_string = ''
+    for x in range(0, np.random.randint(100)):
+        random_string += random.choice(string.ascii_letters)
+
+    tx_id = sha256(random_string.encode()).hexdigest()
     tx_index = 0
-    sig_script = hex(secrets.randbits(random_bits))[2:]
-    sequence = pow(2, 32) - 1
-    utxo = UTXO_INPUT(tx_id, tx_index, sig_script, sequence)
+    sig = w.sign_transaction(tx_id)
+    utxo = UTXO_INPUT(tx_id, tx_index, sig)
     raw1 = utxo.raw_utxo
     utxo2 = decode_raw_input_utxo(raw1)
 

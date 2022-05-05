@@ -99,6 +99,20 @@ def tonelli_shanks(n: int, p: int):
 
 class EllipticCurve:
     '''
+    We instantiate an elliptic curve E of the form
+
+        y^2 = x^3 + ax + b (mod p)
+
+    with the integers a and b and the prime p. Further, we assign the curve a generator G, which generates the
+    associated abelian group comprising the rational points of E(F_p) and the point at infinity.
+
+    Unless otherwise specified, we use the Bitcoin elliptic curve parameters:
+
+    a = 0
+    b = 7
+    p = 2^256 - 2^32 - 2^9 -2^8 - 2^7 - 2^6 - 2^4 - 1
+
+
     '''
     BITCOIN_PRIME = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
     BITCOIN_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
@@ -113,7 +127,7 @@ class EllipticCurve:
 
         over a finite field F_p. Each curve E will have the parameters a, b and p as class variables, along with the
         order of the corresponding finite abelian group. Further, for p sufficiently small we attach a random
-        generator as class variable - and for p sufficienly large we use the BITCOIN values.
+        generator as class variable - and for p sufficiently large we use the BITCOIN values.
 
         '''
         # Linear coefficient
