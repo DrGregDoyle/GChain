@@ -56,7 +56,7 @@ class Blockchain:
                          0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
     GENESIS_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
 
-    def __init__(self, a=GENESIS_A, b=GENESIS_B, p=GENESIS_P, G=GENESIS_GENERATOR, n=GENESIS_ORDER):
+    def __init__(self):
         '''
 
         '''
@@ -67,7 +67,8 @@ class Blockchain:
         self.utxos = pd.DataFrame(columns=self.COLUMNS)
 
         # Create the encryption curve
-        self.curve = EllipticCurve(a, b, p, G, n)
+        self.curve = EllipticCurve(self.GENESIS_A, self.GENESIS_B, self.GENESIS_P, self.GENESIS_GENERATOR,
+                                   self.GENESIS_ORDER)
 
         # Generate genesis block
         self.add_block(self.create_genesis_block())
@@ -126,7 +127,7 @@ class Blockchain:
         return self.curve.verify_signature((r, s), tx_id, pk_point)
 
     '''
-    DETERMINE MINING REWARD
+    DETERMINE MINING PROPERTIES
     '''
 
     def determine_reward(self):
@@ -179,19 +180,13 @@ class Blockchain:
                 print('Previous hash error in block')
                 return False
 
-        # Input/Output trackers
-        total_input_amount = 0
-        total_output_amount = 0
-        mining_amount = 0
-
         # Consumed UTXO trackers
         consumed_inputs = []
 
         # Output UTXO temp dataframe
         output_utxo_df = pd.DataFrame(columns=self.COLUMNS)
 
-        # Iterate over list of Transactions
-        # raw_tx_list = candidate_block.transactions
+        # Iterate over Transactions
         for tx_object in candidate_block.transactions:
 
             # Validate the inputs.
@@ -215,21 +210,19 @@ class Blockchain:
                     print('Validate signature error')
                     return False
 
-                # Add the amount to total input amount and record as consumed
-                total_input_amount += int(self.utxos.loc[output_index]['amount'].values[0], 16)
+                # Scheduled input for consumption after all validation done
                 consumed_inputs.append(i)
 
-            # Get total output amount and add UTXO to temp dataframe. Use count for output index
+            # Add the new outputs. Use count for the index
             count = 0
             for output_utxo in tx_object.outputs:
-                total_output_amount += int(output_utxo.amount, 16)
                 output_row = pd.DataFrame([[tx_object.id, count, output_utxo.amount, output_utxo.address]],
                                           columns=self.COLUMNS)
                 output_utxo_df = pd.concat([output_utxo_df, output_row], ignore_index=True)
                 count += 1
 
         ##ALL VALIDATION COMPLETE##
-        # Consume inputs
+        # All inputs validated. Consume them
         for c in consumed_inputs:
             self.consume_input(c)
 
@@ -303,4 +296,3 @@ class Blockchain:
         genesis_block = Block('', self.determine_target(), self.GENESIS_NONCE, [genesis_tx.raw_tx],
                               timestamp=self.GENESIS_TIMESTAMP)
         return genesis_block.raw_block
-

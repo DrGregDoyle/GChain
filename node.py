@@ -32,7 +32,7 @@ class Node:
 
     '''
 
-    def __init__(self, wallet=None, a=None, b=None, p=None):
+    def __init__(self, wallet=None):
         '''
 
         '''
@@ -72,6 +72,10 @@ class Node:
     @property
     def curve(self):
         return self.blockchain.curve
+
+    @property
+    def height(self):
+        return self.blockchain.height
 
     '''
     MINER

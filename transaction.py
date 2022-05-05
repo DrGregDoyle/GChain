@@ -87,10 +87,6 @@ class Transaction:
     def id(self):
         return sha256(self.raw_tx.encode()).hexdigest()
 
-    @property
-    def byte_size(self):
-        return len(self.raw_tx) // 2
-
 
 '''
 Decoding
@@ -136,10 +132,3 @@ def decode_raw_transaction(raw_tx: str) -> Transaction:
     version = int(raw_tx[temp_index:temp_index + version_index], 16)
 
     return Transaction(inputs=inputs, outputs=outputs, min_height=min_height, version=version)
-
-
-'''
-TESTING
-'''
-from wallet import Wallet
-import numpy as np
