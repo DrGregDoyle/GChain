@@ -223,7 +223,7 @@ class Block:
     def get_raw_tx(self, tx_id: str):
         try:
             index = self.tx_ids.index(tx_id)
-            return self.transactions[index]
+            return self.transactions[index].raw_tx
         except TypeError:
             return ''
 

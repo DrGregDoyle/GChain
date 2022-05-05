@@ -27,6 +27,8 @@ from cryptography import EllipticCurve
 from wallet import Wallet
 from vli import VLI
 from hashlib import sha256, sha1
+from transaction import Transaction
+from miner import Miner
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -43,6 +45,9 @@ class Blockchain:
     COLUMNS = ['tx_id', 'tx_index', 'amount', 'address']
     ADDRESS_CHECKSUM_BITS = 32
     ADDRESS_DIGEST_BITS = 160
+    GENESIS_ADDRESS = 'HoKkFxMKyRTeuawTnZgRTurgGLcxgYBdo'
+    GENESIS_TIMESTAMP = 1651769733
+    GENESIS_NONCE = 1221286
 
     def __init__(self, a=None, b=None, p=None):
         '''
@@ -58,7 +63,7 @@ class Blockchain:
         self.curve = EllipticCurve(a, b, p)
 
         # Generate genesis block
-        # TODO: Create genesis block program
+        self.add_block(self.create_genesis_block())
 
     '''
     PROPERTIES
@@ -66,10 +71,7 @@ class Blockchain:
 
     @property
     def last_block(self):
-        if self.chain == []:
-            return []
-        else:
-            return self.chain[-1]
+        return self.chain[-1]
 
     @property
     def height(self):
@@ -129,6 +131,9 @@ class Blockchain:
         Will determine a reward for miners based on the state of the chain
         '''
         return 50
+
+    def determine_target(self):
+        return 20
 
     '''
     CONSUME UTXO INPUTS
@@ -220,12 +225,6 @@ class Blockchain:
                 output_utxo_df = pd.concat([output_utxo_df, output_row], ignore_index=True)
                 count += 1
 
-        # Verify total_output_amount = reward + total_input_amount
-        if total_output_amount != self.determine_reward() + total_input_amount:
-            # Logging
-            print('Input/output amount error')
-            return False
-
         ##ALL VALIDATION COMPLETE##
         # Consume inputs
         for c in consumed_inputs:
@@ -247,6 +246,11 @@ class Blockchain:
         This will remove the top most block in the chain.
         We reverse the utxo's in the block.
         '''
+        # Don't pop the genesis block
+        if self.height == 0:
+            return False
+
+        # Remove top most block
         removed_block = decode_raw_block(self.chain.pop(-1))
 
         # For each transaction, we remove the output utxos from the db and restore the related inputs
@@ -279,12 +283,23 @@ class Blockchain:
                     count += 1
                 temp_tx = decode_raw_transaction(raw_tx)
                 temp_output = temp_tx.outputs[tx_index]
-                temp_amount = int(temp_output.amount, 16)
+                temp_amount = temp_output.amount
                 temp_address = temp_output.address
                 row = pd.DataFrame([[tx_id, tx_index, temp_amount, temp_address]], columns=self.COLUMNS)
                 self.utxos = pd.concat([self.utxos, row], ignore_index=True)
 
         return True
+
+    '''
+    GENESIS BLOCK
+    '''
+
+    def create_genesis_block(self):
+        output_utxo = UTXO_OUTPUT(self.determine_reward(), self.GENESIS_ADDRESS)
+        genesis_tx = Transaction(inputs=[], outputs=[output_utxo.raw_utxo])
+        genesis_block = Block('', self.determine_target(), self.GENESIS_NONCE, [genesis_tx.raw_tx],
+                              timestamp=self.GENESIS_TIMESTAMP)
+        return genesis_block.raw_block
 
     '''
     TESTING

@@ -103,8 +103,8 @@ class Node:
             mining_amount = self.get_mining_amount()
             mining_output = UTXO_OUTPUT(mining_amount, self.wallet.address)
             current_height = self.blockchain.height
-            mining_transaction = Transaction(inputs=[], outputs=[mining_output.raw_utxo], locktime=current_height + 1)
-            self.validated_transactions.insert(0, mining_transaction.raw_transaction)
+            mining_transaction = Transaction(inputs=[], outputs=[mining_output.raw_utxo], min_height=current_height + 1)
+            self.validated_transactions.insert(0, mining_transaction.raw_tx)
 
             # Create candidate block
             if self.last_block == []:
@@ -286,4 +286,4 @@ class Node:
         output_utxo = UTXO_OUTPUT(np.random.randint(50), phantom_script)
 
         tx = Transaction(inputs=[input_utxo.raw_utxo], outputs=[output_utxo.raw_utxo])
-        self.add_transaction(tx.raw_transaction)
+        self.add_transaction(tx.raw_tx)
