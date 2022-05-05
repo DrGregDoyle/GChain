@@ -59,10 +59,6 @@ class UTXO_INPUT:
     def raw_utxo(self):
         return self.tx_id + self.tx_index + self.sig_length + self.signature
 
-    @property
-    def byte_size(self):
-        return len(self.raw_utxo) // 2
-
 
 class UTXO_OUTPUT:
     '''
@@ -91,10 +87,6 @@ class UTXO_OUTPUT:
     @property
     def raw_utxo(self):
         return self.amount + self.addy_length + self.cepk
-
-    @property
-    def byte_size(self):
-        return len(self.raw_utxo) // 2
 
 
 '''
