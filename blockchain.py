@@ -18,17 +18,15 @@ The Blockchain will contain the fixed curve parameters used for the address and 
 '''
 IMPORTS
 '''
+
 from block import decode_raw_block, Block
-import pandas as pd
-from helpers import get_signature_parts, base58_to_int, int_to_base58
-from transaction import decode_raw_transaction
-from utxo import decode_raw_input_utxo, decode_raw_output_utxo, UTXO_INPUT, UTXO_OUTPUT
 from cryptography import EllipticCurve
-from wallet import Wallet
-from vli import VLI
 from hashlib import sha256, sha1
-from transaction import Transaction
-from miner import Miner
+from helpers import get_signature_parts, int_to_base58
+from transaction import Transaction, decode_raw_transaction
+from utxo import UTXO_INPUT, UTXO_OUTPUT
+
+import pandas as pd
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -44,7 +42,10 @@ class Blockchain:
     '''
     COLUMNS = ['tx_id', 'tx_index', 'amount', 'address']
     ADDRESS_CHECKSUM_BITS = 32
-    ADDRESS_DIGEST_BITS = 160
+
+    '''
+    GENESIS CONSTANTS
+    '''
     GENESIS_ADDRESS = 'HoKkFxMKyRTeuawTnZgRTurgGLcxgYBdo'
     GENESIS_TIMESTAMP = 1651769733
     GENESIS_NONCE = 1221286
@@ -303,10 +304,3 @@ class Blockchain:
                               timestamp=self.GENESIS_TIMESTAMP)
         return genesis_block.raw_block
 
-    '''
-    TESTING
-    '''
-
-    def add_output_row(self, tx_id: str, tx_index: int, amount: int, address: str):
-        row = pd.DataFrame([[tx_id, tx_index, amount, address]], columns=self.COLUMNS)
-        self.utxos = pd.concat([self.utxos, row], ignore_index=True)

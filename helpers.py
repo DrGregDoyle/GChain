@@ -5,9 +5,8 @@ Various helper functions I don't know where else to put.
 '''
 IMPORTS
 '''
-from vli import VLI
-from hashlib import sha256
 import datetime
+from hashlib import sha256
 
 
 def get_signature_parts(signature: str):

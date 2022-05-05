@@ -113,10 +113,9 @@ class Node:
                 last_block = decode_raw_block(self.last_block)
                 new_block = Block(last_block.id, self.get_mining_target(), 0, self.validated_transactions)
 
-            # print(f'Raw new block: {new_block.raw_block}')
-
             # Mine block
             mined_raw_block = self.miner.mine_block(new_block.raw_block)
+
             # Add block or interrupt miner
             if mined_raw_block != '':
                 mined_block = decode_raw_block(mined_raw_block)
@@ -151,7 +150,7 @@ class Node:
                 tx_index = i.tx_index
                 input_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
                 assert not input_index.empty
-                total_input_amount += self.utxos.loc[input_index]['amount'].values[0]
+                total_input_amount += int(self.utxos.loc[input_index]['amount'].values[0], 16)
 
             # Add total output amount for tx
             for t in temp_tx.outputs:
@@ -167,7 +166,7 @@ class Node:
         '''
         Algorithm for determining mining target goes here
         '''
-        return 20
+        return self.blockchain.determine_target()
 
     '''
     ADD BLOCK
@@ -268,22 +267,3 @@ class Node:
         for r in orphan_copies:
             self.add_transaction(r)
 
-    '''
-    TESTING
-    '''
-
-    def generate_and_add_tx(self):
-        random_string = ''
-        for x in range(0, np.random.randint(50)):
-            random_string += random.choice(string.ascii_letters)
-        phantom_id = sha256(random_string.encode()).hexdigest()
-        phantom_amount = np.random.randint(50)
-        phantom_script = self.wallet.compressed_public_key
-        self.blockchain.add_output_row(phantom_id, 0, phantom_amount, phantom_script)
-
-        sig = self.wallet.sign_transaction(phantom_id)
-        input_utxo = UTXO_INPUT(phantom_id, 0, sig)
-        output_utxo = UTXO_OUTPUT(np.random.randint(50), phantom_script)
-
-        tx = Transaction(inputs=[input_utxo.raw_utxo], outputs=[output_utxo.raw_utxo])
-        self.add_transaction(tx.raw_tx)
