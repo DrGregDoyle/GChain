@@ -23,9 +23,7 @@ import string
 IMPORTS
 '''
 from utxo import decode_raw_output_utxo, decode_raw_input_utxo, UTXO_INPUT, UTXO_OUTPUT
-from vli import VLI
 from hashlib import sha256
-import secrets
 
 '''
 TRANSACTION 
@@ -50,7 +48,7 @@ class Transaction:
 
         # Format version and min_height
         self.version = format(version, f'0{self.VERSION_BITS // 4}x')
-        self.min_height = format(version, f'0{self.MIN_HEIGHT_BITS // 4}x')
+        self.min_height = format(min_height, f'0{self.MIN_HEIGHT_BITS // 4}x')
 
         # Iterate over raw input utxo's and store the objects
         self.inputs = []

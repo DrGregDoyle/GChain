@@ -27,6 +27,8 @@ from cryptography import EllipticCurve
 from wallet import Wallet
 from vli import VLI
 from hashlib import sha256, sha1
+from transaction import Transaction
+from miner import Miner
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -43,6 +45,9 @@ class Blockchain:
     COLUMNS = ['tx_id', 'tx_index', 'amount', 'address']
     ADDRESS_CHECKSUM_BITS = 32
     ADDRESS_DIGEST_BITS = 160
+    GENESIS_ADDRESS = 'HoKkFxMKyRTeuawTnZgRTurgGLcxgYBdo'
+    GENESIS_TIMESTAMP = 1651769733
+    GENESIS_NONCE = 1221286
 
     def __init__(self, a=None, b=None, p=None):
         '''
@@ -58,7 +63,7 @@ class Blockchain:
         self.curve = EllipticCurve(a, b, p)
 
         # Generate genesis block
-        # TODO: Create genesis block program
+        self.add_block(self.create_genesis_block())
 
     '''
     PROPERTIES
@@ -129,6 +134,9 @@ class Blockchain:
         Will determine a reward for miners based on the state of the chain
         '''
         return 50
+
+    def determine_target(self):
+        return 20
 
     '''
     CONSUME UTXO INPUTS
@@ -220,12 +228,6 @@ class Blockchain:
                 output_utxo_df = pd.concat([output_utxo_df, output_row], ignore_index=True)
                 count += 1
 
-        # Verify total_output_amount = reward + total_input_amount
-        if total_output_amount != self.determine_reward() + total_input_amount:
-            # Logging
-            print('Input/output amount error')
-            return False
-
         ##ALL VALIDATION COMPLETE##
         # Consume inputs
         for c in consumed_inputs:
@@ -285,6 +287,19 @@ class Blockchain:
                 self.utxos = pd.concat([self.utxos, row], ignore_index=True)
 
         return True
+
+    '''
+    GENESIS BLOCK
+    '''
+
+    def create_genesis_block(self):
+        output_utxo = UTXO_OUTPUT(self.determine_reward(), self.GENESIS_ADDRESS)
+        genesis_tx = Transaction(inputs=[], outputs=[output_utxo.raw_utxo])
+        genesis_block = Block('', self.determine_target(), self.GENESIS_NONCE, [genesis_tx.raw_tx],
+                              timestamp=self.GENESIS_TIMESTAMP)
+        # m = Miner()
+        # return m.mine_block(genesis_block.raw_block)
+        return genesis_block.raw_block
 
     '''
     TESTING
