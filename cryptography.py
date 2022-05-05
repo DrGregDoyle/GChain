@@ -119,7 +119,7 @@ class EllipticCurve:
                          0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
     BITCOIN_GROUPORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
 
-    def __init__(self, a=None, b=None, p=None):
+    def __init__(self, a=None, b=None, p=None, generator=None, order=None):
         '''
         We instantiate an elliptic curve E of the form
 
@@ -145,12 +145,20 @@ class EllipticCurve:
         # Field prime
         if p is None:
             self.p = self.BITCOIN_PRIME
-            self.order = self.BITCOIN_GROUPORDER
-            self.generator = self.BITCOIN_GENERATOR
         else:
             self.p = p
-            self.order = self.find_group_order()
-            self.generator = self.find_generator()
+
+        # Generator
+        if generator is None:
+            self.generator = self.BITCOIN_GENERATOR
+        else:
+            self.generator = generator
+
+        # Order
+        if order is None:
+            self.order = self.BITCOIN_GROUPORDER
+        else:
+            self.order = order
 
     '''
     Properties

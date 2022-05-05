@@ -48,8 +48,14 @@ class Blockchain:
     GENESIS_ADDRESS = 'HoKkFxMKyRTeuawTnZgRTurgGLcxgYBdo'
     GENESIS_TIMESTAMP = 1651769733
     GENESIS_NONCE = 1221286
+    GENESIS_A = 0
+    GENESIS_B = 7
+    GENESIS_P = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
+    GENESIS_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
+                         0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
+    GENESIS_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
 
-    def __init__(self, a=None, b=None, p=None):
+    def __init__(self, a=GENESIS_A, b=GENESIS_B, p=GENESIS_P, G=GENESIS_GENERATOR, n=GENESIS_ORDER):
         '''
 
         '''
@@ -60,7 +66,7 @@ class Blockchain:
         self.utxos = pd.DataFrame(columns=self.COLUMNS)
 
         # Create the encryption curve
-        self.curve = EllipticCurve(a, b, p)
+        self.curve = EllipticCurve(a, b, p, G, n)
 
         # Generate genesis block
         self.add_block(self.create_genesis_block())
@@ -76,10 +82,6 @@ class Blockchain:
     @property
     def height(self):
         return len(self.chain) - 1
-
-    @property
-    def curve_parameters(self):
-        return [self.curve.a, self.curve.b, self.curve.p]
 
     '''
     VERIFY SIGNATURE

@@ -81,29 +81,29 @@ def test_encoding():
         random_string += random.choice(string.ascii_letters)
     tx_hash = sha256(random_string.encode()).hexdigest()
 
-    random_num1 = secrets.randbelow(99999)
-    random_num2 = secrets.randbelow(99999)
-    random_num3 = secrets.randbelow(99999)
+    random_num1 = secrets.randbelow(pow(2, 8))
+    random_num2 = secrets.randbelow(pow(2, 32))
+    random_num3 = secrets.randbelow(pow(2, 32))
 
     for x in range(0, 3):
-        generate_transaction()
+        transactions.append(generate_transaction().raw_tx)
 
-    # new_block = Block(tx_hash, random_num2, random_num3, transactions, version=random_num1)
-    # raw_block = new_block.raw_block
-    # raw_header = new_block.raw_header
-    # raw_txs = new_block.raw_transactions
-    #
-    # decoded_block = decode_raw_block(raw_block)
-    # decoded_header = decode_raw_header(raw_header)
-    # decoded_txs = decode_raw_block_transactions(raw_txs)
-    # decoded_tx_ids = []
-    # for t in decoded_txs:
-    #     decoded_tx_ids.append(decode_raw_transaction(t).id)
-    #
-    # assert decoded_block.raw_block == raw_block
-    # assert decoded_block.raw_header == raw_header
-    # assert decoded_block.raw_transactions == raw_txs
-    # assert decoded_header['version'] == random_num1
-    # assert decoded_header['target'] == random_num2
-    # assert decoded_header['nonce'] == random_num3
-    # assert decoded_tx_ids == new_block.tx_ids == decoded_block.tx_ids
+    new_block = Block(tx_hash, random_num2, random_num3, transactions, version=random_num1)
+    raw_block = new_block.raw_block
+    raw_header = new_block.raw_header
+    raw_txs = new_block.raw_transactions
+
+    decoded_block = decode_raw_block(raw_block)
+    decoded_header = decode_raw_header(raw_header)
+    decoded_txs = decode_raw_block_transactions(raw_txs)
+    decoded_tx_ids = []
+    for t in decoded_txs:
+        decoded_tx_ids.append(decode_raw_transaction(t).id)
+
+    assert decoded_block.raw_block == raw_block
+    assert decoded_block.raw_header == raw_header
+    assert decoded_block.raw_transactions == raw_txs
+    assert decoded_header['version'] == random_num1
+    assert decoded_header['target'] == random_num2
+    assert decoded_header['nonce'] == random_num3
+    assert decoded_tx_ids == new_block.tx_ids == decoded_block.tx_ids

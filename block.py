@@ -299,9 +299,9 @@ def decode_raw_block_transactions(raw_block_tx: str) -> list:
     transactions = []
     temp_index = Block.TRANSACTION_NUM_BITS // 4
     for x in range(0, tx_num):
-        new_transaction = decode_raw_transaction(raw_block_tx[temp_index:])
-        transactions.append(new_transaction.raw_tx)
-        temp_index = temp_index + new_transaction.byte_size * 2
+        new_raw_tx = decode_raw_transaction(raw_block_tx[temp_index:]).raw_tx
+        transactions.append(new_raw_tx)
+        temp_index = temp_index + len(new_raw_tx)
 
     return transactions
 
