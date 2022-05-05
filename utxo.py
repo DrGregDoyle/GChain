@@ -30,8 +30,7 @@ The UTXO_OUTPUT has the following fields w corresponding size: 33 bytes
 '''
 IMPORTS
 '''
-from vli import VLI
-from helpers import int_to_base58, base58_to_int, verify_address_checksum
+from helpers import int_to_base58, base58_to_int
 
 
 class UTXO_INPUT:

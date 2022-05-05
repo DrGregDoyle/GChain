@@ -27,10 +27,8 @@ The Block TRANSACTIONS will contain the following fields with assigned sizes:
 
 '''Imports'''
 from hashlib import sha256
-from vli import VLI
-from helpers import utc_to_seconds, seconds_to_utc
-import datetime
-from transaction import decode_raw_transaction, Transaction
+from helpers import utc_to_seconds
+from transaction import decode_raw_transaction
 
 
 class Block:
@@ -299,30 +297,8 @@ def decode_raw_block_transactions(raw_block_tx: str) -> list:
     transactions = []
     temp_index = Block.TRANSACTION_NUM_BITS // 4
     for x in range(0, tx_num):
-        new_transaction = decode_raw_transaction(raw_block_tx[temp_index:])
-        transactions.append(new_transaction.raw_tx)
-        temp_index = temp_index + new_transaction.byte_size * 2
+        new_raw_tx = decode_raw_transaction(raw_block_tx[temp_index:]).raw_tx
+        transactions.append(new_raw_tx)
+        temp_index = temp_index + len(new_raw_tx)
 
     return transactions
-
-
-'''
-TESTING
-'''
-from transaction import generate_transaction
-
-
-def generate_test_block(bit_target=20):
-    '''
-    We generate a test block
-    '''
-    tx_hash = sha256('tx_hash'.encode()).hexdigest()
-    tx = []
-    for x in range(0, 3):
-        tx.append(generate_transaction().raw_transaction)
-
-    version = 1
-    target = bit_target
-    nonce = 0
-    new_block = Block(tx_hash, target, nonce, tx)
-    return new_block

@@ -36,8 +36,8 @@ def test_raw_transaction():
     output_utxo1 = UTXO_OUTPUT(secrets.randbelow(1000), w3.address)
     output_utxo2 = UTXO_OUTPUT(secrets.randbelow(1000), w4.address)
 
-    inputs = [input_utxo1.raw_utxo]
-    outputs = [output_utxo1.raw_utxo]
+    inputs = [input_utxo1.raw_utxo, input_utxo2.raw_utxo]
+    outputs = [output_utxo1.raw_utxo, output_utxo2.raw_utxo]
 
     t = Transaction(inputs=inputs, outputs=outputs)
     raw = t.raw_tx
