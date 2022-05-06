@@ -1,28 +1,24 @@
 '''
 The Node class
 
-TODO: Add verifying that total input amount is greater than total output amount
-TODO: Decide on less code vs more clarity in what's happening
-
 '''
-import random
-import string
 
 '''
 IMPORTS
 '''
+import socket
+import threading
+
 from block import Block, decode_raw_block
 from blockchain import Blockchain
-from cryptography import EllipticCurve
+from helpers import utc_to_seconds, list_to_node, verify_checksum
 from miner import Miner
+from network import close_socket, create_socket, package_and_send_data, receive_data
 from transaction import Transaction, decode_raw_transaction
-from utxo import UTXO_OUTPUT, UTXO_INPUT, decode_raw_input_utxo, decode_raw_output_utxo
+from utxo import UTXO_OUTPUT
 from wallet import Wallet
-import threading
+import json
 from hashlib import sha256
-from helpers import utc_to_seconds, seconds_to_utc
-import numpy as np
-import socket
 
 '''
 CLASS
@@ -33,6 +29,10 @@ class Node:
     '''
 
     '''
+    DEFAULT_PORT = 41000
+    DEFAULT_FORMAT = 'utf-8'
+    LISTENER_TIMEOUT = 10
+    MESSAGE_RETRIES = 5
 
     def __init__(self, wallet=None):
         '''
@@ -61,6 +61,17 @@ class Node:
 
         # Create Mining stats dict
         self.mining_stats = {}
+
+        # Setup server
+        self.local_host = "0.0.0.0"
+        self.port = self.DEFAULT_PORT
+        self.local_node = (self.local_host, self.port)
+
+        # Setup node list
+        self.node_list = []
+
+        # Start Event Listener
+        self.start_event_listener()
 
     '''
     PROPERTIES
@@ -301,12 +312,131 @@ class Node:
             if self.is_mining:
                 self.stop_miner()
             self.is_listening = False
+            # Logging
+            print(f'Shutting down listener within {self.LISTENER_TIMEOUT} seconds.', end='\r\n')
             while self.listening_thread.is_alive():
                 pass
             self.local_node = None
+        # Logging
+        print('Event listener turned off.')
 
     def event_listener(self):
         '''
         '''
 
-        pass
+        # Find an available port
+        port_assigned = False
+        while not port_assigned:
+            try:
+                temp_socket = create_socket()
+                temp_socket.bind(self.local_node)
+                port_assigned = True
+            except OSError:
+                # Logging
+                print(f'Socket at port {self.port} is in use')
+                self.port += 1
+                self.local_node = (self.local_host, self.port)
+
+        print(f'Local node: {self.local_node}')
+        self.node_list.append(self.local_node)
+
+        # Listen on that port
+        listening_socket = create_socket()
+        listening_socket.settimeout(self.LISTENER_TIMEOUT)
+        listening_socket.bind(self.local_node)
+        listening_socket.listen()
+
+        # Create new thread for events
+        while self.is_listening:
+            try:
+                event, addr = listening_socket.accept()
+                event_thread = threading.Thread(target=self.handle_event, args=(event, addr,))
+                event_thread.start()
+            except socket.timeout:
+                pass
+        close_socket(listening_socket)
+
+    def handle_event(self, event, addr):
+        '''
+
+        '''
+        type, data, checksum = receive_data(event)
+
+        # package_and_send_data(event, 11, json.dumps(self.local_node))
+
+        if type == '01':
+            self.node_connect_event(event, data, checksum)
+        else:
+            package_and_send_data(event, 0, '')
+
+    '''
+    EVENTS
+    '''
+    '''
+    Connect/Disconnect Events
+    '''
+
+    def node_connect_event(self, client: socket, data: str, checksum: str):
+
+        new_node = list_to_node(json.loads(data))
+        if not verify_checksum(json.dumps(new_node), checksum):
+            package_and_send_data(client, 12, '')
+
+        # Logging
+        print(f'Node connection received from {new_node}.')
+
+        if new_node not in self.node_list:
+            self.node_list.append(new_node)
+        package_and_send_data(client, 11, json.dumps(self.local_node))
+
+    '''
+    Connect and Disconnect
+    '''
+
+    def connect_to_node(self, node: tuple) -> bool:
+        '''
+        Connect to a specific node and exchange addresses.
+        Needs to be only called when Node is_listening, otherwise we wont have a self.local_node
+        '''
+        # Verify the node is external
+        if node != self.local_node:
+            # Handle connection errors
+            try:
+                # Create a client socket
+                client = create_socket()
+                client.connect(node)
+
+                # Send local node - datatype == 01
+                package_and_send_data(client, 1, json.dumps(self.local_node))
+
+                # Receive data from node
+                type, data, checksum = receive_data(client)
+                print(f'Type: {type}')
+                print(f'Data: {data}')
+                print(f'Checksum: {checksum}')
+
+                # Verify checksum
+                if not verify_checksum(data, checksum):
+                    return False
+
+                # Add node to node_list
+                if type == '0b':
+                    new_node = list_to_node(json.loads(data))
+                    if new_node not in self.node_list:
+                        self.node_list.append(new_node)
+                else:
+                    return False
+
+                # Logging
+                print(f'Successfully connected to {new_node}')
+                close_socket(client)
+
+            # Connection errors
+            except ConnectionError:
+                return False
+
+        # Local node is node
+        else:
+            # Logging
+            print(f'Cannot connect to own address: {self.local_node}')
+            return False
