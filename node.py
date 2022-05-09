@@ -70,6 +70,9 @@ class Node:
         '''
 
         '''
+        # Logging
+        print('Instantiating Blockchain and calculating hash_rate. This may take a moment.')
+
         # Instantiate the Blockchain
         self.blockchain = Blockchain()
 
@@ -91,8 +94,11 @@ class Node:
         self.validated_transactions = []
         self.orphaned_transactions = []
 
-        # Create Mining stats dict
-        self.mining_stats = {}
+        # Create UTXO tracking dictionary
+        self.consumed_utxos = {}
+
+        # Create Mining stats dict from genesis block
+        self.mining_stats = self.blockchain.genesis_mining_stats
 
         # Setup server
         self.listening_address = '0.0.0.0'
@@ -131,11 +137,6 @@ class Node:
 
     def start_miner(self):
         if not self.is_mining:
-            # Get hash rate before beginning
-            # Logging
-            print('Calculating hashrate')
-            self.mining_stats.update({'hashrate': self.miner.get_hashrate()})
-
             # Start mining Block in new thread
             self.is_mining = True
             self.mining_thread = threading.Thread(target=self.mine_block)
@@ -147,12 +148,14 @@ class Node:
     def stop_miner(self):
         if self.is_mining:
             self.miner.stop_mining()
+            self.is_mining = False
             while self.mining_thread.is_alive():
                 pass
-            self.is_mining = False
+            # Logging
+            print('Miner turned off.')
         else:
             # Logging
-            print('Miner already stopped')
+            print('Miner already turned off.')
 
     def mine_block(self):
         interrupted = False
@@ -160,16 +163,13 @@ class Node:
             # Create Mining Transaction
             mining_amount = self.get_mining_amount()
             mining_output = UTXO_OUTPUT(mining_amount, self.wallet.address)
-            current_height = self.blockchain.height
-            mining_transaction = Transaction(inputs=[], outputs=[mining_output.raw_utxo], min_height=current_height + 1)
+            mining_transaction = Transaction(inputs=[], outputs=[mining_output.raw_utxo],
+                                             min_height=self.blockchain.height + 1)
             self.validated_transactions.insert(0, mining_transaction.raw_tx)
 
             # Create candidate block
-            if self.last_block == []:
-                new_block = Block('', self.get_mining_target(), 0, self.validated_transactions)
-            else:
-                last_block = decode_raw_block(self.last_block)
-                new_block = Block(last_block.id, self.get_mining_target(), 0, self.validated_transactions)
+            last_block = decode_raw_block(self.last_block)
+            new_block = Block(last_block.id, self.get_mining_target(), 0, self.validated_transactions)
 
             # Mine block
             start_time = utc_to_seconds()
@@ -182,14 +182,25 @@ class Node:
                 mined_block = decode_raw_block(mined_raw_block)
                 added = self.add_block(mined_block.raw_block)
                 if added:
-                    self.validated_transactions = []
+                    hash_rate = int(mined_block.nonce, 16) // mining_time
                     self.mining_stats.update({"mining_time": mining_time})
+                    self.mining_stats.update({"hash_rate": hash_rate})
+                    self.send_block_to_network(mined_raw_block)
+                    self.check_for_parents()
+                else:
+                    # Logging
+                    print(f'Error when trying to add Block. Ending mining.')
+                    interrupted = True
             else:
                 # Remove mining transaction
                 self.validated_transactions.pop(0)
+                # Logging
+                print('Interrupt received by Node')
                 interrupted = True
         # Stop mining if the thread is interrupted
         self.is_mining = False
+        # Logging
+        print('Mining turned off from interrupt')
 
     def get_mining_amount(self):
         '''
@@ -240,7 +251,9 @@ class Node:
         '''
         added = self.blockchain.add_block(raw_block)
         if added:
-            self.check_for_parents()
+            # TODO: Run over tx in block and remove from validated_transactions and consumed_utxos
+            self.validated_transactions = []
+            self.consumed_utxos = []
         return added
 
     '''
@@ -274,6 +287,8 @@ class Node:
 
         # Return false if already validated or orphaned
         if new_tx in self.validated_transactions or new_tx in self.orphaned_transactions:
+            # Logging
+            print('Transaction already in node tx pools.')
             return False
 
         # Set orphaned transaction Flag
@@ -290,18 +305,31 @@ class Node:
 
             # If the row doesn't exist, mark for orphan
             if input_index.empty:
+                # Logging
+                print(f'Unable to find utxo with id {tx_id} and index {tx_index}')
                 all_inputs = False
 
             # If the row exists, validate the input with the output and add the amount
             else:
-                # Increase total_input_amount
-                amount = int(self.utxos.loc[input_index]['amount'].values[0], 16)
-                total_input_amount += amount
-
                 # Validate the signature
                 address = self.utxos.loc[input_index]['address'].values[0]
                 if not self.blockchain.validate_signature(i.signature, address, tx_id):
+                    # Logging
+                    print(f'Signature error')
                     return False
+
+                # Check input not already scheduled for consumption
+                consumed = self.consumed_utxos.get(tx_id)
+                if consumed is None or consumed != tx_index:
+                    self.consumed_utxos.update({tx_id: tx_index})
+                else:
+                    # Logging
+                    print(f'Utxo already consumed by this node')
+                    return False
+
+                # Increase total_input_amount
+                amount = int(self.utxos.loc[input_index]['amount'].values[0], 16)
+                total_input_amount += amount
 
         # If not flagged for orphaned
         if all_inputs:
@@ -312,6 +340,8 @@ class Node:
 
             # Verify the total output amount
             if total_output_amount > total_input_amount:
+                # Logging
+                print('Input/Output amount error in tx')
                 return False
 
             # Add tx to validated tx pool
@@ -455,6 +485,8 @@ class Node:
             self.new_transaction_event(event, data)
         elif type == '05':
             self.get_transaction_event(event, data)
+        elif type == '06':
+            self.new_block_event(event, data)
 
     '''
     SERVER EVENTS
@@ -510,6 +542,27 @@ class Node:
         send_to_client(client, 1)
         for t in self.validated_transactions:
             self.send_transaction_to_node(new_node, t)
+
+    def new_block_event(self, client: socket, raw_block: str):
+        '''
+        TODO: Change it so that mining stops only if the block is added. Otherwise Miners could be effectively
+        stopped using a fake 'new block' attack
+        '''
+        # Stop mining
+        resume_mining = self.is_mining
+        if resume_mining:
+            self.stop_miner()
+
+        # Try and Add Block
+        added = self.add_block(raw_block)
+        if added:
+            send_to_client(client, 1)
+        else:
+            send_to_client(client, 3)
+
+        # Resume Mining
+        if resume_mining:
+            self.start_miner()
 
     '''
     CLIENT EVENTS
@@ -686,6 +739,7 @@ class Node:
                         connected = True
                     else:
                         retries += 1
+                    close_socket(client)
                 except ConnectionRefusedError:
                     # Logging
                     print(f'Error connecting to {node} for transaction')
@@ -722,6 +776,7 @@ class Node:
                         connected = True
                     else:
                         retries += 1
+                    close_socket(client)
                 except ConnectionRefusedError:
                     # Logging
                     print(f'Error connecting to {node} for transaction requests')
@@ -733,6 +788,48 @@ class Node:
         else:
             # Logging
             print('Cannot send transaction to own node.')
+
+    def send_block_to_node(self, node: tuple, raw_block: str):
+        '''
+        We send a raw block to the node
+        '''
+        if node not in [self.listening_node, self.server_node, self.local_node]:
+            connected = False
+            retries = 0
+            while not connected and retries < self.MESSAGE_RETRIES:
+                try:
+                    client = create_socket()
+                    client.connect(node)
+                    send_to_server(client, 6, raw_block)
+                    message = receive_client_message(client)
+                    if message == '01':
+                        # Logging
+                        print(f'Successfully sent block to {node}')
+                        connected = True
+                    elif message == '03':
+                        # Logging
+                        print(f'Node at {node} failed to add block. Gain consensus')
+                        retries += 1
+                        # Gain consensus
+                    else:
+                        retries += 1
+                    close_socket(client)
+                except ConnectionRefusedError:
+                    # Logging
+                    print(f'Error connecting to {node} for transaction')
+                    retries += 1
+
+            if not connected:
+                # Logging
+                print(f'Failed to send block {decode_raw_transaction(raw_block).id}')
+        else:
+            # Logging
+            print('Cannot send block to own node.')
+
+    def send_block_to_network(self, raw_block: str):
+        for node in self.node_list:
+            if node != self.server_node:
+                self.send_block_to_node(node, raw_block)
 
     # TESTING
     def generate_function(self):
@@ -746,9 +843,16 @@ class Node:
         address = utxo_list[3]
 
         # Genesis signature
-        sig = '4203bbb4f439d5f7cd3507e8f780d1ad51ea29a3bd092e88814cacedf6877072eb284023c31f713e6a80e9ff2540e8bbe55d851b6056e42bfe2d45f44091f1a98419713f37131ff32388ffdeb085cb86b76f857d9ddeb1f3f1fb758a69c997de1d12e32'
+        sig = '420213e322dc11b4f3778896bd72ca96fa79a0bd0a6c986e5057236ecb2bffd54b4c40279202d872ea89f0cbdbbfa3448031d9cb99a4b4efe913b61d8f313070e9badf407deca985023bcfb9634aaf088b8c095e3799d1b31f340c7b0a82b0d90c1d5a36'
         utxo_input = UTXO_INPUT(tx_id, tx_index, sig)
         output1 = UTXO_OUTPUT(amount // 2, self.wallet.address)
         output2 = UTXO_OUTPUT(amount // 2, address)
         new_tx = Transaction(inputs=[utxo_input.raw_utxo], outputs=[output1.raw_utxo, output2.raw_utxo])
         self.add_transaction(new_tx.raw_tx)
+
+    def mine_one_block(self):
+        starting_height = self.height
+        self.start_miner()
+        while self.height == starting_height:
+            pass
+        self.stop_miner()

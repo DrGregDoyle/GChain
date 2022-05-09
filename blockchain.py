@@ -22,9 +22,10 @@ IMPORTS
 from block import decode_raw_block, Block
 from cryptography import EllipticCurve
 from hashlib import sha256, sha1
-from helpers import get_signature_parts, int_to_base58
+from helpers import get_signature_parts, int_to_base58, utc_to_seconds
 from transaction import Transaction, decode_raw_transaction
 from utxo import UTXO_INPUT, UTXO_OUTPUT
+from miner import Miner
 
 import pandas as pd
 
@@ -46,9 +47,9 @@ class Blockchain:
     '''
     GENESIS CONSTANTS
     '''
-    GENESIS_ADDRESS = 'HoKkFxMKyRTeuawTnZgRTurgGLcxgYBdo'
+    GENESIS_ADDRESS = 'LsGSWuW7DxKoUhC5WXVhvLBiZRTxQTdAv'
     GENESIS_TIMESTAMP = 1651769733
-    GENESIS_NONCE = 1221286
+    GENESIS_NONCE = 2647960
     GENESIS_A = 0
     GENESIS_B = 7
     GENESIS_P = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
@@ -71,7 +72,9 @@ class Blockchain:
                                    self.GENESIS_ORDER)
 
         # Generate genesis block
-        self.add_block(self.create_genesis_block())
+        raw_genesis_block, hash_rate, mining_time = self.create_genesis_block()
+        self.add_block(raw_genesis_block)
+        self.genesis_mining_stats = {"mining_time": mining_time, "hash_rate": hash_rate}
 
     '''
     PROPERTIES
@@ -137,7 +140,7 @@ class Blockchain:
         return 50
 
     def determine_target(self):
-        return 20  # HARDCODED FOR GENESIS TESTING STRINGS
+        return 24  # HARDCODED FOR GENESIS TESTING STRINGS
 
     '''
     CONSUME UTXO INPUTS
@@ -291,8 +294,21 @@ class Blockchain:
     '''
 
     def create_genesis_block(self):
+        # TODO: Use genesis block to establish hashrate
         output_utxo = UTXO_OUTPUT(self.determine_reward(), self.GENESIS_ADDRESS)
         genesis_tx = Transaction(inputs=[], outputs=[output_utxo.raw_utxo])
-        genesis_block = Block('', self.determine_target(), self.GENESIS_NONCE, [genesis_tx.raw_tx],
+        genesis_block = Block('', self.determine_target(), 0, [genesis_tx.raw_tx],
                               timestamp=self.GENESIS_TIMESTAMP)
-        return genesis_block.raw_block
+
+        # Mine Block to calculate initial hashrate
+        miner = Miner()
+        start_time = utc_to_seconds()
+        mined_block = miner.mine_block(genesis_block.raw_block)
+        end_time = utc_to_seconds()
+
+        # Confirm nonce and get hashrate
+        assert int(decode_raw_block(mined_block).nonce, 16) == self.GENESIS_NONCE
+        mining_time = end_time - start_time
+        hash_rate = self.GENESIS_NONCE // mining_time
+
+        return mined_block, hash_rate, mining_time
