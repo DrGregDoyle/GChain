@@ -487,6 +487,8 @@ class Node:
             self.get_transaction_event(event, data)
         elif type == '06':
             self.new_block_event(event, data)
+        elif type == '07':
+            self.indexed_block_event(event, data)
 
     '''
     SERVER EVENTS
@@ -563,6 +565,18 @@ class Node:
         # Resume Mining
         if resume_mining:
             self.start_miner()
+
+    def indexed_block_event(self, client: socket, index: str):
+        '''
+        The index will be a 1-byte hex string
+        '''
+        index_num = int(index, 16)
+        try:
+            raw_indexed_block = self.blockchain.chain[index_num]
+            send_to_client(client, 1)
+            send_to_server(client, 6, raw_indexed_block)
+        except IndexError:
+            send_to_client(client, 2)
 
     '''
     CLIENT EVENTS
@@ -830,6 +844,41 @@ class Node:
         for node in self.node_list:
             if node != self.server_node:
                 self.send_block_to_node(node, raw_block)
+
+    def get_indexed_block_from_node(self, node: tuple, index: int):
+        '''
+
+        '''
+        raw_block = None
+        # Allow retries
+        block_received = False
+        retries = 0
+        while not block_received and retries < self.MESSAGE_RETRIES:
+            try:
+                client = create_socket()
+                client.connect(node)
+                send_to_server(client, 7, hex(index)[2:])
+                message = receive_client_message(client)
+                if message == '01':
+                    type, data, checksum = receive_event_data(client)
+                    if type == '06' and verify_checksum(data, checksum):
+                        raw_block = data
+                        block_received = True
+                    else:
+                        # Logging
+                        print(f'DataType or checksum error requesting block at index {index} from node {node}')
+                        retries += 1
+                else:
+                    # Logging
+                    print(f'Index error received when requesting block at index {index} from node {node}')
+                    retries += 1
+                close_socket(client)
+            except ConnectionRefusedError:
+                # Logging
+                print(f'Failed to connect to {node} for block at index {index}')
+                retries += 1
+
+        return raw_block
 
     # TESTING
     def generate_function(self):
