@@ -453,6 +453,8 @@ class Node:
             self.disconnect_from_network_event(event, data)
         elif type == '04':
             self.new_transaction_event(event, data)
+        elif type == '05':
+            self.get_transaction_event(event, data)
 
     '''
     SERVER EVENTS
@@ -499,6 +501,15 @@ class Node:
             print('Received new transaction')
             self.add_transaction(raw_tx)
         send_to_client(client, 1)
+
+    def get_transaction_event(self, client: socket, node: str):
+        '''
+
+        '''
+        new_node = list_to_node(json.loads(node))
+        send_to_client(client, 1)
+        for t in self.validated_transactions:
+            self.send_transaction_to_node(new_node, t)
 
     '''
     CLIENT EVENTS
@@ -609,7 +620,13 @@ class Node:
         for n in new_nodes:
             self.connect_to_node(n)
 
-        # SEND TRANSACTIONS
+        # Send existing transactions
+        for tx in self.validated_transactions:
+            self.send_transaction_to_network(tx)
+
+        # Get transactions from node
+        self.get_transactions_from_node(node)
+
         # ACHIEVE CONSENSUS
 
     def __disconnect_from_network(self):
@@ -685,6 +702,37 @@ class Node:
         for node in self.node_list:
             if node != self.server_node:
                 self.send_transaction_to_node(node, raw_tx)
+
+    def get_transactions_from_node(self, node: tuple):
+        '''
+        We request the validated transactions from a node
+        '''
+        if node not in [self.listening_node, self.server_node, self.local_node]:
+            connected = False
+            retries = 0
+            while not connected and retries < self.MESSAGE_RETRIES:
+                try:
+                    client = create_socket()
+                    client.connect(node)
+                    send_to_server(client, 5, json.dumps(self.server_node))
+                    message = receive_client_message(client)
+                    if message == '01':
+                        # Logging
+                        print(f'Successfully requested transaction from {node}')
+                        connected = True
+                    else:
+                        retries += 1
+                except ConnectionRefusedError:
+                    # Logging
+                    print(f'Error connecting to {node} for transaction requests')
+                    retries += 1
+
+            if not connected:
+                # Logging
+                print(f'Failed to request transactions from {node}')
+        else:
+            # Logging
+            print('Cannot send transaction to own node.')
 
     # TESTING
     def generate_function(self):
