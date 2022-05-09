@@ -137,7 +137,7 @@ class Blockchain:
         return 50
 
     def determine_target(self):
-        return 20
+        return 20  # HARDCODED FOR GENESIS TESTING STRINGS
 
     '''
     CONSUME UTXO INPUTS

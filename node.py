@@ -13,9 +13,10 @@ from block import Block, decode_raw_block
 from blockchain import Blockchain
 from helpers import utc_to_seconds, list_to_node, verify_checksum
 from miner import Miner
-from network import close_socket, create_socket, package_and_send_data, receive_data
+from network import get_ip, get_local_ip, close_socket, create_socket, send_to_client, send_to_server, \
+    receive_event_data, receive_client_message
 from transaction import Transaction, decode_raw_transaction
-from utxo import UTXO_OUTPUT
+from utxo import UTXO_OUTPUT, UTXO_INPUT
 from wallet import Wallet
 import json
 from hashlib import sha256
@@ -27,7 +28,38 @@ CLASS
 
 class Node:
     '''
+    We have two notions of node: there is the Node class, and there is the node socket, which is an ip address and
+    port. We will refer to the Node class object explicitly using the uppercase N and the node socket using the
+    lowercase n.
 
+    NOTE: All ip addresses must be given in SINGLE QUOTES as a string
+
+    NOTE: The node_list will be a list of all connected Nodes. And the server node of each Node is what's saved in
+    the node_list.
+
+    '''
+    '''
+    MESSAGE TYPES
+    '''
+    DATATYPES = [
+        "PING",
+        "NODE CONNECT",
+        "NETWORK CONNECT",
+        "DISCONNECT",
+        "TRANSACTION",
+        "TRANSACTION REQUEST",
+        "NEW BLOCK",
+        "INDEXED BLOCK",
+        "STATUS",
+        "HASH MATCH",
+        "ADDRESS",
+        "CONFIRM",
+        "CHECKSUM ERROR",
+        "NODE LIST"
+    ]
+
+    '''
+    NETWORKING CONSTANTS
     '''
     DEFAULT_PORT = 41000
     DEFAULT_FORMAT = 'utf-8'
@@ -63,9 +95,9 @@ class Node:
         self.mining_stats = {}
 
         # Setup server
-        self.local_host = "0.0.0.0"
-        self.port = self.DEFAULT_PORT
-        self.local_node = (self.local_host, self.port)
+        self.listening_address = '0.0.0.0'
+        self.server_address = get_ip()
+        self.local_address = get_local_ip()
 
         # Setup node list
         self.node_list = []
@@ -177,7 +209,7 @@ class Node:
             # Add total input amount for tx
             for i in temp_tx.inputs:
                 tx_id = i.tx_id
-                tx_index = i.tx_index
+                tx_index = int(i.tx_index, 16)
                 input_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
                 assert not input_index.empty
                 total_input_amount += int(self.utxos.loc[input_index]['amount'].values[0], 16)
@@ -240,6 +272,10 @@ class Node:
         # Recover the transaction object
         new_tx = decode_raw_transaction(raw_tx)
 
+        # Return false if already validated or orphaned
+        if new_tx in self.validated_transactions or new_tx in self.orphaned_transactions:
+            return False
+
         # Set orphaned transaction Flag
         all_inputs = True
 
@@ -281,6 +317,9 @@ class Node:
             # Add tx to validated tx pool
             self.validated_transactions.append(raw_tx)
 
+            # Send tx to network
+            self.send_transaction_to_network(raw_tx)
+
         # Flagged for orphaned. Add to orphan pool
         else:
             self.orphaned_transactions.append(raw_tx)
@@ -298,6 +337,32 @@ class Node:
             self.add_transaction(r)
 
     '''
+    SERVER
+    '''
+
+    def create_nodes(self):
+        '''
+        The server will listen on address 0.0.0.0 - this allows it to listen to requests from multiple ip addresses (
+        i.e., both internal and external.) To receive messages from external machines, the machine running the Node
+        must port-forward the ports 41000--42000 to their internal IP address.
+        '''
+        port_found = False
+        temp_port = self.DEFAULT_PORT
+        while not port_found:
+            try:
+                temp_socket = create_socket()
+                temp_socket.bind((socket.gethostname(), temp_port))
+                port_found = True
+            except OSError:
+                # Logging
+                print(f'Port {temp_port} unavailable.')
+                temp_port += 1
+        self.port = temp_port
+        self.listening_node = (self.listening_address, self.port)
+        self.server_node = (self.server_address, self.port)
+        self.local_node = (self.local_address, self.port)
+
+    '''
     EVENT LISTENER
     '''
 
@@ -309,14 +374,26 @@ class Node:
 
     def stop_event_listener(self):
         if self.is_listening:
+            # Stop all mining
             if self.is_mining:
                 self.stop_miner()
+
+            # Disconnnect from network
+            self.__disconnect_from_network()
+
+            # Set listening to False
             self.is_listening = False
+
             # Logging
             print(f'Shutting down listener within {self.LISTENER_TIMEOUT} seconds.', end='\r\n')
+
+            # Wait for thread to Die
             while self.listening_thread.is_alive():
                 pass
-            self.local_node = None
+
+            # Clear port
+            self.port = None
+
         # Logging
         print('Event listener turned off.')
 
@@ -324,26 +401,21 @@ class Node:
         '''
         '''
 
-        # Find an available port
-        port_assigned = False
-        while not port_assigned:
-            try:
-                temp_socket = create_socket()
-                temp_socket.bind(self.local_node)
-                port_assigned = True
-            except OSError:
-                # Logging
-                print(f'Socket at port {self.port} is in use')
-                self.port += 1
-                self.local_node = (self.local_host, self.port)
+        # Create nodes
+        self.create_nodes()
 
+        # Logging
+        print(f'Listening node: {self.listening_node}')
+        print(f'Server node: {self.server_node}')
         print(f'Local node: {self.local_node}')
-        self.node_list.append(self.local_node)
+
+        # Add server node to node_list
+        self.node_list.append(self.server_node)
 
         # Listen on that port
         listening_socket = create_socket()
         listening_socket.settimeout(self.LISTENER_TIMEOUT)
-        listening_socket.bind(self.local_node)
+        listening_socket.bind(self.listening_node)
         listening_socket.listen()
 
         # Create new thread for events
@@ -360,83 +432,275 @@ class Node:
         '''
 
         '''
-        type, data, checksum = receive_data(event)
+        # Receive event data
+        type, data, checksum = receive_event_data(event)
 
-        # package_and_send_data(event, 11, json.dumps(self.local_node))
+        # Verify checksum
+        if not verify_checksum(data, checksum):
+            send_to_client(event, 2)
+
+        # TESTING#
+        print(f'Type: {type}')
+        print(f'Data: {data}')
+        print(f'Checksum: {checksum}')
+        #########
 
         if type == '01':
-            self.node_connect_event(event, data, checksum)
-        else:
-            package_and_send_data(event, 0, '')
+            self.node_connect_event(event, data)
+        elif type == '02':
+            self.network_connect_event(event, data)
+        elif type == '03':
+            self.disconnect_from_network_event(event, data)
+        elif type == '04':
+            self.new_transaction_event(event, data)
 
     '''
-    EVENTS
-    '''
-    '''
-    Connect/Disconnect Events
+    SERVER EVENTS
     '''
 
-    def node_connect_event(self, client: socket, data: str, checksum: str):
-
-        new_node = list_to_node(json.loads(data))
-        if not verify_checksum(json.dumps(new_node), checksum):
-            package_and_send_data(client, 12, '')
-
-        # Logging
-        print(f'Node connection received from {new_node}.')
-
+    def node_connect_event(self, client: socket, node: str):
+        '''
+        The node will be a json string of a list with the host and port. We can retrieve the list with json.loads -
+        and then the tuple with the list_to_node function.
+        '''
+        new_node = list_to_node(json.loads(node))
         if new_node not in self.node_list:
+            # Logging
+            print(f'Node connection established with {new_node}')
             self.node_list.append(new_node)
-        package_and_send_data(client, 11, json.dumps(self.local_node))
+        send_to_client(client, 1)
+
+    def network_connect_event(self, client: socket, node: str):
+        '''
+        The Node will confirm the network request and send the node list.
+        It will then run the node_connect_event to add the new node received
+        '''
+        send_to_client(client, 1)
+        send_to_server(client, 2, json.dumps(self.node_list))
+        self.node_connect_event(client, node)
+
+    def disconnect_from_network_event(self, client: socket, node: str):
+        '''
+        We remove the node from the node_list.
+        '''
+        new_node = list_to_node(json.loads(node))
+        if new_node in self.node_list:
+            self.node_list.remove(new_node)
+        # CONSENSUS DICT
+        send_to_client(client, 1)
+
+    def new_transaction_event(self, client: socket, raw_tx: str):
+        '''
+
+        '''
+
+        if raw_tx not in self.validated_transactions:
+            # Logging
+            print('Received new transaction')
+            self.add_transaction(raw_tx)
+        send_to_client(client, 1)
 
     '''
-    Connect and Disconnect
+    CLIENT EVENTS
     '''
 
     def connect_to_node(self, node: tuple) -> bool:
         '''
-        Connect to a specific node and exchange addresses.
-        Needs to be only called when Node is_listening, otherwise we wont have a self.local_node
+        We attempt to connect to the node (socket) given. Will retry if we get such a message up to MESSAGE_RETRIES
+        times.
         '''
-        # Verify the node is external
-        if node != self.local_node:
-            # Handle connection errors
-            try:
-                # Create a client socket
-                client = create_socket()
-                client.connect(node)
+        if node not in [self.listening_node, self.server_node, self.local_node]:
+            connected = False
+            retry_count = 0
+            while not connected and retry_count < self.MESSAGE_RETRIES:
+                try:
+                    node_socket = create_socket()
+                    node_socket.connect(node)
+                    send_to_server(node_socket, 1, json.dumps(self.server_node))
+                    confirm_message = receive_client_message(node_socket)
+                    if confirm_message == '01':
+                        connected = True
+                        if node not in self.node_list:
+                            self.node_list.append(node)
+                    elif confirm_message == '02':
+                        retry_count += 1
+                    close_socket(node_socket)
 
-                # Send local node - datatype == 01
-                package_and_send_data(client, 1, json.dumps(self.local_node))
+                    # TESTING
+                    print(f'Confirm message: {confirm_message}')
 
-                # Receive data from node
-                type, data, checksum = receive_data(client)
-                print(f'Type: {type}')
-                print(f'Data: {data}')
-                print(f'Checksum: {checksum}')
+                except ConnectionRefusedError:
+                    # Logging
+                    print(f'Unable to connect to node {node}')
+                    retry_count += 1
 
-                # Verify checksum
-                if not verify_checksum(data, checksum):
-                    return False
+                except TimeoutError:
+                    # Logging
+                    print(f'Timeout error connecting to {node}')
+                    retry_count += 1
+            return connected
 
-                # Add node to node_list
-                if type == '0b':
-                    new_node = list_to_node(json.loads(data))
-                    if new_node not in self.node_list:
-                        self.node_list.append(new_node)
-                else:
-                    return False
-
-                # Logging
-                print(f'Successfully connected to {new_node}')
-                close_socket(client)
-
-            # Connection errors
-            except ConnectionError:
-                return False
-
-        # Local node is node
         else:
             # Logging
-            print(f'Cannot connect to own address: {self.local_node}')
+            print(f'Cannot connect to own address: {node}')
             return False
+
+    def connect_to_network(self, node: tuple):
+        '''
+        We send a network request to a node - which means we will receive a node_list.
+        For all the new nodes in the node_list, we will run connect_to_node
+        '''
+        # Track new nodes
+        new_nodes = []
+
+        # If the node isn't ours and we're listening
+        if node not in [self.listening_node, self.local_node, self.server_node] and self.is_listening:
+            node_list_received = False
+            retry_count = 0
+            while not node_list_received and retry_count < self.MESSAGE_RETRIES:
+                try:
+                    network_socket = create_socket()
+                    network_socket.connect(node)
+                    send_to_server(network_socket, 2, json.dumps(self.server_node))
+                    message = receive_client_message(network_socket)
+
+                    # If confirm message, get the node list
+                    if message == '01':
+                        # Get node list
+                        type, data, checksum = receive_event_data(network_socket)
+
+                        # Get confirm message that server added node
+                        node_added = receive_client_message(network_socket)
+
+                        # If all data valid, proceed
+                        if verify_checksum(data, checksum) and type == '02' and node_added == '01':
+                            # Node list will be a list of "nodes as list"
+                            node_list = json.loads(data)
+
+                            # Add all the new nodes to node_list
+                            for L in node_list:
+                                new_node = list_to_node(L)
+                                if new_node not in self.node_list:
+                                    self.node_list.append(new_node)
+                                    new_nodes.append(new_node)
+                            node_list_received = True
+                            # Logging
+                            print(f'Successfully received node list from {node}')
+
+                        # If checksum fails, retry
+                        else:
+                            retry_count += 1
+                    else:
+                        retry_count += 1
+                    close_socket(network_socket)
+
+                except ConnectionRefusedError:
+                    # Logging
+                    print(f'Unable to connect to node {node}')
+                    retry_count += 1
+        elif node in [self.listening_node, self.local_node, self.server_node]:
+            # Logging
+            print(f'Cannot connect to own node: {node}')
+        elif not self.is_listening:
+            # Logging
+            print('Event listener not running')
+
+        # Now connect to all new_nodes
+        for n in new_nodes:
+            self.connect_to_node(n)
+
+        # SEND TRANSACTIONS
+        # ACHIEVE CONSENSUS
+
+    def __disconnect_from_network(self):
+        '''
+        Send disconnect message to all nodes in node_list.
+        Set to private as we only want this called when we stop event listener
+        '''
+        # Remove our own port first
+        self.node_list.remove(self.server_node)
+
+        # Get iterable list
+        node_list = self.node_list.copy()
+
+        # Iterate over all nodes in node_list
+        for node in node_list:
+            # Allow for retries
+            disconnected = False
+            retries = 0
+            while not disconnected and retries < self.MESSAGE_RETRIES:
+                try:
+                    client = create_socket()
+                    client.connect(node)
+                    send_to_server(client, 3, json.dumps(self.server_node))
+                    message = receive_client_message(client)
+                    if message == '01':
+                        # Logging
+                        print(f'Disconnect message sent successfully to {node}')
+                        self.node_list.remove(node)
+                        disconnected = True
+                    else:
+                        retries += 1
+                    close_socket(client)
+                except ConnectionRefusedError:
+                    # Logging
+                    print(f'Unable to send disconnect message to {node}')
+                    retries += 1
+
+        # Logging
+        print(f'After disconnecting the node_list is {self.node_list}')
+
+    def send_transaction_to_node(self, node: tuple, raw_tx: str):
+        '''
+        We send a raw_tx to the node
+        '''
+        if node not in [self.listening_node, self.server_node, self.local_node]:
+            connected = False
+            retries = 0
+            while not connected and retries < self.MESSAGE_RETRIES:
+                try:
+                    client = create_socket()
+                    client.connect(node)
+                    send_to_server(client, 4, raw_tx)
+                    message = receive_client_message(client)
+                    if message == '01':
+                        # Logging
+                        print(f'Successfully sent transaction to {node}')
+                        connected = True
+                    else:
+                        retries += 1
+                except ConnectionRefusedError:
+                    # Logging
+                    print(f'Error connecting to {node} for transaction')
+                    retries += 1
+
+            if not connected:
+                # Logging
+                print(f'Failed to send transaction {decode_raw_transaction(raw_tx).id}')
+        else:
+            # Logging
+            print('Cannot send transaction to own node.')
+
+    def send_transaction_to_network(self, raw_tx: str):
+        for node in self.node_list:
+            if node != self.server_node:
+                self.send_transaction_to_node(node, raw_tx)
+
+    # TESTING
+    def generate_function(self):
+        '''
+        We generate a function and add it to the validated_transactions node
+        '''
+        utxo_list = self.utxos.iloc[0].values
+        tx_id = utxo_list[0]
+        tx_index = utxo_list[1]
+        amount = int(utxo_list[2], 16)
+        address = utxo_list[3]
+
+        # Genesis signature
+        sig = '4203bbb4f439d5f7cd3507e8f780d1ad51ea29a3bd092e88814cacedf6877072eb284023c31f713e6a80e9ff2540e8bbe55d851b6056e42bfe2d45f44091f1a98419713f37131ff32388ffdeb085cb86b76f857d9ddeb1f3f1fb758a69c997de1d12e32'
+        utxo_input = UTXO_INPUT(tx_id, tx_index, sig)
+        output1 = UTXO_OUTPUT(amount // 2, self.wallet.address)
+        output2 = UTXO_OUTPUT(amount // 2, address)
+        new_tx = Transaction(inputs=[utxo_input.raw_utxo], outputs=[output1.raw_utxo, output2.raw_utxo])
+        self.add_transaction(new_tx.raw_tx)

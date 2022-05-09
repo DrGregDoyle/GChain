@@ -24,3 +24,7 @@ This integer can be expressed in binary form, decimal form or hexadecimal form a
 Hence we may refer to elements as 'hex strings' or 'binary strings' and it is understood that we are referring to the integer value.
 </p>
 
+<p>
+NOTE: The Node will act as a server to receive data from Wallets or Nodes. The user will have to port-forward the 
+range of Node ports to their internal ip address. 
+</p>
