@@ -8,6 +8,7 @@ IMPORTS
 '''
 import socket
 import threading
+from collections import Counter
 
 from block import Block, decode_raw_block
 from blockchain import Blockchain
@@ -66,6 +67,11 @@ class Node:
     LISTENER_TIMEOUT = 10
     MESSAGE_RETRIES = 5
 
+    '''
+    CONSENSUS CONSTANTS
+    '''
+    HASHINDEX_BITS = 32
+
     def __init__(self, wallet=None):
         '''
 
@@ -108,6 +114,14 @@ class Node:
         # Setup node list
         self.node_list = []
 
+        # Setup consensus variables (Start w genesis block vals)
+        self.consensus_height = 0
+        self.consensus_hash = '0000008f9a191320f71990f02c5b5abd40e4d9f17cd0cb7cc911a91e29f5fb49'
+        self.consensus_timestamp = 1651769733
+
+        # Setup consensus dict for nodes and their status
+        self.consensus_dict = {}
+
         # Start Event Listener
         self.start_event_listener()
 
@@ -130,6 +144,195 @@ class Node:
     @property
     def height(self):
         return self.blockchain.height
+
+    @property
+    def status(self):
+        last_block = decode_raw_block(self.last_block)
+        height = self.height
+        hash = last_block.id
+        timestamp = int(last_block.timestamp, 16)
+        status_dict = {
+            "HEIGHT": height,  # int
+            "HASH": hash,  # str
+            "TIMESTAMP": timestamp  # int
+        }
+        return status_dict
+
+    @property
+    def consensus(self):
+        consensus_dict = {
+            "Consensus Height": self.consensus_height,
+            "Consensus Hash": self.consensus_hash,
+            "Consensus Timestamp": self.consensus_timestamp
+        }
+        return consensus_dict
+
+    @property
+    def consensus_nodes(self):
+        consensus_node_list = []
+        for node in self.consensus_dict:
+            status_dict = self.consensus_dict.get(node)
+            temp_height = status_dict.get("HEIGHT")
+            temp_hash = status_dict.get("HASH")
+            temp_time = status_dict.get("TIMESTAMP")
+            if temp_height == self.consensus_height and temp_hash == self.consensus_hash and temp_time == self.consensus_timestamp:
+                consensus_node_list.append(node)
+        return consensus_node_list
+
+    @property
+    def hashlist(self):
+        hashlist = []
+        for raw_block in self.blockchain.chain:
+            hashlist.append(decode_raw_block(raw_block).id)
+        return hashlist
+
+    '''
+    STATUS
+    '''
+
+    def update_status(self):
+        self.consensus_dict.update({self.server_node: self.status})
+
+    '''
+    CONSENSUS
+    '''
+
+    def gather_consensus(self):
+        '''
+        Consensus Algorithm:
+        1) From the list of consensus nodes, find all nodes who have the greatest height
+
+        2) From the list of nodes who have greatest height, find the id with the greatest frequency. If two id's have
+        the same frequency, we choose the block with the least timestamp.
+
+        3) Update consensus variables
+        '''
+
+        # 1) Get list of nodes with greatest height
+        greatest_height = 0
+        node_list = []
+        for node in self.consensus_dict:
+            status = self.consensus_dict.get(node)
+            height = status.get("HEIGHT")
+            if height > greatest_height:
+                greatest_height = height
+                node_list = [node]
+            elif height == greatest_height:
+                node_list.append(node)
+
+        # 2) Find the maximum number of common hash values (AKA: the hash_freq)
+        hashtime_list = []
+        for h_node in node_list:
+            h_status = self.consensus_dict.get(h_node)
+            hashtime_list.append((h_status.get("HASH"), h_status.get("TIMESTAMP")))
+        hash_freq_dict = Counter(hashtime_list)
+        hash_freq = max(hash_freq_dict.values())
+
+        # 3) Get all IDs with this hash frequency
+        hashtime_candidate_list = [k for k, v in hash_freq_dict.items() if v == hash_freq]
+
+        # 4) Sort by timestamp
+        (temp_hash, temp_time) = ("", pow(2, 32) - 1)
+        for t in hashtime_candidate_list:
+            (hash, timestamp) = t
+            if timestamp < temp_time:
+                temp_hash = hash
+                temp_time = timestamp
+
+        # 5) Modify consensus variables
+        self.consensus_hash = temp_hash
+        self.consensus_timestamp = temp_time
+        self.consensus_height = greatest_height
+
+    def achieve_consensus(self):
+        '''
+        Will interrupt mining to achieve consensus
+        TODO: Disable new block events during achieve consensus
+        '''
+        resume_mining = self.is_mining
+
+        if resume_mining:
+            self.stop_miner()
+            while self.is_mining:
+                pass
+
+        self.match_to_consensus_chain()
+        self.get_missing_blocks()
+        self.send_status_to_network()
+
+        if resume_mining:
+            self.start_miner()
+
+    def match_to_consensus_chain(self):
+        '''
+        Will modify the chain to match up to greatest height.
+        '''
+
+        matching_height = self.get_greatest_matching_height()
+
+        while self.height > matching_height:
+            self.blockchain.pop_block()
+
+    def get_missing_blocks(self):
+        '''
+        We iterate over all consensus nodes and get an indexed block from each in turn
+        '''
+
+        node_modulus = len(self.consensus_nodes)
+        node_count = 0
+        c_nodes = self.consensus_nodes.copy()
+        while self.height < self.consensus_height:
+            get_node = c_nodes[node_count]
+            next_block = self.get_indexed_block_from_node(get_node, self.height + 1)
+            if self.add_block(next_block):
+                self.update_status()
+            else:
+                # Logging
+                print(f'Unable to add block at height {self.height + 1}')
+            node_count = (node_count + 1) % node_modulus
+
+    '''
+    Hashlist Exchange
+    '''
+
+    def get_greatest_matching_height(self):
+        '''
+        We iterate over every consensus node until we connect.
+        Then from a consensus node we find the greatest index for which the two hashlist's match
+        Return the greatest index value. Will always be a non-negative value
+        '''
+
+        '''First get consensus to update the consensus nodes'''
+        self.gather_consensus()
+
+        match_index = 0
+        index_found = False
+        node_count = 0
+        while not index_found and node_count < len(self.consensus_nodes):
+            node = self.consensus_nodes[node_count]
+            if node != self.server_node:
+                try:
+                    client = create_socket()
+                    client.connect(node)
+                    send_to_server(client, 9, json.dumps(self.hashlist))
+                    message = receive_client_message(client)
+                    if message == '01':
+                        type, data, checksum = receive_event_data(client)
+                        if type == '0a' and verify_checksum(data, checksum):
+                            match_index = int(data, 16)
+                            index_found = True
+                        else:
+                            node_count += 1
+                    close_socket(client)
+
+                except ConnectionRefusedError:
+                    # Logging
+                    node_count += 1
+            else:
+                # Logging
+                node_count += 1
+
+        return match_index
 
     '''
     MINER
@@ -253,12 +456,28 @@ class Node:
         if added:
             # TODO: Run over tx in block and remove from validated_transactions and consumed_utxos
             self.validated_transactions = []
-            self.consumed_utxos = []
+            self.consumed_utxos = {}
+            self.update_status()
         return added
 
     '''
     TRANSACTIONS
     '''
+
+    # SIEVE AND SORT CAN BE MOVED TO HELPERS
+    def sieve_transactions(self, sieve_list: list, filter_list: list) -> list:
+        sieve_index = sieve_list.copy()
+        for s in sieve_index:
+            if s in filter_list:
+                sieve_list.remove(s)
+        return sieve_list
+
+    def sort_transactions(self, transaction_list: list) -> list:
+        unique_list = []
+        for x in transaction_list:
+            if x not in unique_list:
+                unique_list.append(x)
+        return sorted(unique_list, key=lambda k: k['Timestamp'])
 
     def add_transaction(self, raw_tx: str) -> bool:
         '''
@@ -442,6 +661,9 @@ class Node:
         # Add server node to node_list
         self.node_list.append(self.server_node)
 
+        # Add status to consensus dict
+        self.update_status()
+
         # Listen on that port
         listening_socket = create_socket()
         listening_socket.settimeout(self.LISTENER_TIMEOUT)
@@ -489,6 +711,10 @@ class Node:
             self.new_block_event(event, data)
         elif type == '07':
             self.indexed_block_event(event, data)
+        elif type == '08':
+            self.status_event(event, data)
+        elif type == '09':
+            self.hash_match_event(event, data)
 
     '''
     SERVER EVENTS
@@ -578,6 +804,35 @@ class Node:
         except IndexError:
             send_to_client(client, 2)
 
+    def status_event(self, client: socket, status_list: str):
+        '''
+        The status list will be a json string which we recover using json.loads. It will have the node as first entry
+        and the corresponding status as second entry.
+        '''
+        node_list, status_dict = json.loads(status_list)
+        node = list_to_node(node_list)
+        self.consensus_dict.update({node: status_dict})
+        send_to_client(client, 1)
+        send_to_server(client, 8, json.dumps(self.status))
+
+        # Make sure we're still at consensus
+        self.gather_consensus()
+        if self.server_node not in self.consensus_nodes:
+            self.achieve_consensus()
+
+    def hash_match_event(self, client: socket, hash_list: str):
+        '''
+        The hash_list will be a json string we recover with json.loads
+        '''
+        id_list = json.loads(hash_list)
+        min_length = min(len(id_list), len(self.hashlist))
+        match_index = 0
+        for x in range(1, min_length):
+            if id_list[x] == self.hashlist[x]:
+                match_index += 1
+        send_to_client(client, 1)
+        send_to_server(client, 10, format(match_index, f'0{self.HASHINDEX_BITS // 4}x'))
+
     '''
     CLIENT EVENTS
     '''
@@ -660,7 +915,8 @@ class Node:
                                 new_node = list_to_node(L)
                                 if new_node not in self.node_list:
                                     self.node_list.append(new_node)
-                                    new_nodes.append(new_node)
+                                    if new_node != node:
+                                        new_nodes.append(new_node)
                             node_list_received = True
                             # Logging
                             print(f'Successfully received node list from {node}')
@@ -694,7 +950,11 @@ class Node:
         # Get transactions from node
         self.get_transactions_from_node(node)
 
-        # ACHIEVE CONSENSUS
+        # Exchange statuses
+        self.send_status_to_network()
+
+        # Achieve consensus
+        self.achieve_consensus()
 
     def __disconnect_from_network(self):
         '''
@@ -879,6 +1139,50 @@ class Node:
                 retries += 1
 
         return raw_block
+
+    def send_status_to_node(self, node: tuple):
+        '''
+
+        '''
+        if node not in [self.listening_node, self.server_node, self.local_node]:
+            connected = False
+            retries = 0
+            while not connected and retries < self.MESSAGE_RETRIES:
+                try:
+                    client = create_socket()
+                    client.connect(node)
+                    send_to_server(client, 8, json.dumps([self.server_node, self.status]))
+                    message = receive_client_message(client)
+                    if message == '01':
+                        # Logging
+                        print(f'Successfully exchanged statuses with {node}')
+                        type, data, checksum = receive_event_data(client)
+                        if type == '08' and verify_checksum(data, checksum):
+                            status = json.loads(data)
+                            self.consensus_dict.update({node: status})
+                        connected = True
+                    else:
+                        retries += 1
+                    close_socket(client)
+                except ConnectionRefusedError:
+                    # Logging
+                    print(f'Error connecting to {node} for transaction')
+                    retries += 1
+
+            if not connected:
+                # Logging
+                print(f'Failed to send status')
+        else:
+            # Logging
+            print('Cannot send status to own node.')
+
+    def send_status_to_network(self):
+        '''
+
+        '''
+        for node in self.node_list:
+            if node != self.server_node:
+                self.send_status_to_node(node)
 
     # TESTING
     def generate_function(self):

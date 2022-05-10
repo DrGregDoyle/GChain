@@ -39,7 +39,7 @@ SERVER EVENTS
 #|  Indexed Block       |       07              |#
 #|  Status              |       08              |#
 #|  Hash Match          |       09              |#
-#|  Address             |       0A              |#          10
+#|  Hash Index          |       0A              |#          10
 #|  Confirm             |       0B              |#          11
 #|  Checksum Error      |       0C              |#          12
 #|  Node List           |       0D              |#          13
