@@ -14,7 +14,7 @@ class Miner:
     '''
 
     '''
-    HASHRATE_TEST = pow(10, 7)
+    HASHRATE_TEST = pow(10, 6)
 
     def __init__(self):
         self.is_mining = False

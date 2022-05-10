@@ -112,3 +112,28 @@ def utc_to_seconds():
 def seconds_to_utc(seconds: int):
     date_object = datetime.datetime.utcfromtimestamp(seconds)
     return date_object.isoformat()
+
+
+'''
+LIST TO NODE, NODE TO LIST
+'''
+
+
+def node_to_list(node: tuple):
+    host, port = node
+    return [host, port]
+
+
+def list_to_node(node_as_list: list):
+    host, port = node_as_list
+    return (host, port)
+
+
+'''
+CHECKSUM VERIFY
+'''
+
+
+def verify_checksum(data: str, checksum: str):
+    local_hash = sha256(data.encode()).hexdigest()
+    return local_hash == checksum
