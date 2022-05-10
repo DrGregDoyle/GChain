@@ -37,7 +37,7 @@ def test_consensus_algorithm():
     id2 = decode_raw_block(n2.last_block).id
 
     # Connect to network
-    n2.connect_to_network(n1.listening_node)
+    n2.connect_to_network(n1.local_node, use_local=True)
 
     # Verify block ids
     assert decode_raw_block(n1.last_block).id == id1

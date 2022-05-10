@@ -878,7 +878,7 @@ class Node:
             print(f'Cannot connect to own address: {node}')
             return False
 
-    def connect_to_network(self, node: tuple):
+    def connect_to_network(self, node: tuple, use_local=False):
         '''
         We send a network request to a node - which means we will receive a node_list.
         For all the new nodes in the node_list, we will run connect_to_node
@@ -894,7 +894,10 @@ class Node:
                 try:
                     network_socket = create_socket()
                     network_socket.connect(node)
-                    send_to_server(network_socket, 2, json.dumps(self.server_node))
+                    if not use_local:
+                        send_to_server(network_socket, 2, json.dumps(self.server_node))
+                    else:
+                        send_to_server(network_socket, 2, json.dumps(self.local_node))
                     message = receive_client_message(network_socket)
 
                     # If confirm message, get the node list
