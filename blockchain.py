@@ -48,6 +48,7 @@ class Blockchain:
     GENESIS CONSTANTS
     '''
     GENESIS_ADDRESS = 'LsGSWuW7DxKoUhC5WXVhvLBiZRTxQTdAv'
+    GENESIS_ID = '0000008f9a191320f71990f02c5b5abd40e4d9f17cd0cb7cc911a91e29f5fb49'
     GENESIS_TIMESTAMP = 1651769733
     GENESIS_NONCE = 2647960
     GENESIS_A = 0
@@ -308,6 +309,8 @@ class Blockchain:
 
         # Confirm nonce and get hashrate
         assert int(decode_raw_block(mined_block).nonce, 16) == self.GENESIS_NONCE
+        assert int(decode_raw_block(mined_block).timestamp, 16) == self.GENESIS_TIMESTAMP
+        assert decode_raw_block(mined_block).id == self.GENESIS_ID
         mining_time = end_time - start_time
         hash_rate = self.GENESIS_NONCE // mining_time
 
