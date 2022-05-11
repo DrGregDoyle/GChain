@@ -23,7 +23,7 @@ from block import decode_raw_block, Block
 from cryptography import EllipticCurve
 from hashlib import sha256, sha1
 from helpers import get_signature_parts, int_to_base58, utc_to_seconds
-from transaction import Transaction, decode_raw_transaction
+from transaction import Transaction, decode_raw_transaction, GenesisTransaction
 from utxo import UTXO_INPUT, UTXO_OUTPUT
 from miner import Miner
 
@@ -47,16 +47,16 @@ class Blockchain:
     '''
     GENESIS CONSTANTS
     '''
-    GENESIS_ADDRESS = 'LsGSWuW7DxKoUhC5WXVhvLBiZRTxQTdAv'
     GENESIS_ID = '0000008f9a191320f71990f02c5b5abd40e4d9f17cd0cb7cc911a91e29f5fb49'
     GENESIS_TIMESTAMP = 1651769733
     GENESIS_NONCE = 2647960
-    GENESIS_A = 0
-    GENESIS_B = 7
-    GENESIS_P = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
-    GENESIS_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
-                         0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
-    GENESIS_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
+
+    # GENESIS_A = 0
+    # GENESIS_B = 7
+    # GENESIS_P = pow(2, 256) - pow(2, 32) - pow(2, 9) - pow(2, 8) - pow(2, 7) - pow(2, 6) - pow(2, 4) - 1
+    # GENESIS_GENERATOR = (0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798,
+    #                      0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8)
+    # GENESIS_ORDER = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
 
     def __init__(self):
         '''
@@ -68,14 +68,23 @@ class Blockchain:
         # Create an empty utxo pool
         self.utxos = pd.DataFrame(columns=self.COLUMNS)
 
-        # Create the encryption curve
-        self.curve = EllipticCurve(self.GENESIS_A, self.GENESIS_B, self.GENESIS_P, self.GENESIS_GENERATOR,
-                                   self.GENESIS_ORDER)
-
         # Generate genesis block
-        raw_genesis_block, hash_rate, mining_time = self.create_genesis_block()
+        raw_genesis_block = self.create_genesis_block()
         self.add_block(raw_genesis_block)
-        self.genesis_mining_stats = {"mining_time": mining_time, "hash_rate": hash_rate}
+
+        # Get Genesis TX values
+        genesis_block = decode_raw_block(raw_genesis_block)
+        genesis_tx = genesis_block.transactions[0]
+
+        # Get curve parameters
+        self.a = int(genesis_tx.acoeff, 16)
+        self.b = int(genesis_tx.bcoeff, 16)
+        self.p = int(genesis_tx.prime, 16)
+        self.generator = (int(genesis_tx.generator_x, 16), int(genesis_tx.generator_y, 16))
+        self.group_order = int(genesis_tx.group_order, 16)
+
+        # Instantiate curve
+        self.curve = EllipticCurve(a=self.a, b=self.b, p=self.p, generator=self.generator, order=self.group_order)
 
     '''
     PROPERTIES
@@ -183,6 +192,10 @@ class Blockchain:
                 # Logging
                 print('Previous hash error in block')
                 return False
+        else:
+            # Add genesis block
+            self.chain.append(raw_block)
+            return True
 
         # Consumed UTXO trackers
         consumed_inputs = []
@@ -295,11 +308,11 @@ class Blockchain:
     '''
 
     def create_genesis_block(self):
-        # TODO: Use genesis block to establish hashrate
-        output_utxo = UTXO_OUTPUT(self.determine_reward(), self.GENESIS_ADDRESS)
-        genesis_tx = Transaction(inputs=[], outputs=[output_utxo.raw_utxo])
-        genesis_block = Block('', self.determine_target(), 0, [genesis_tx.raw_tx],
-                              timestamp=self.GENESIS_TIMESTAMP)
+        # output_utxo = UTXO_OUTPUT(self.determine_reward(), self.GENESIS_ADDRESS)
+        # genesis_tx = Transaction(inputs=[], outputs=[output_utxo.raw_utxo])
+        genesis_tx = GenesisTransaction()
+        target = int(genesis_tx.starting_target, 16)
+        genesis_block = Block('', target, 0, [genesis_tx.raw_tx], self.GENESIS_TIMESTAMP)
 
         # Mine Block to calculate initial hashrate
         miner = Miner()
@@ -308,10 +321,10 @@ class Blockchain:
         end_time = utc_to_seconds()
 
         # Confirm nonce and get hashrate
-        assert int(decode_raw_block(mined_block).nonce, 16) == self.GENESIS_NONCE
-        assert int(decode_raw_block(mined_block).timestamp, 16) == self.GENESIS_TIMESTAMP
-        assert decode_raw_block(mined_block).id == self.GENESIS_ID
-        mining_time = end_time - start_time
-        hash_rate = self.GENESIS_NONCE // mining_time
+        # assert int(decode_raw_block(mined_block).nonce, 16) == self.GENESIS_NONCE
+        # assert int(decode_raw_block(mined_block).timestamp, 16) == self.GENESIS_TIMESTAMP
+        # assert decode_raw_block(mined_block).id == self.GENESIS_ID
+        # mining_time = end_time - start_time
+        # hash_rate = self.GENESIS_NONCE // mining_time
 
-        return mined_block, hash_rate, mining_time
+        return mined_block
