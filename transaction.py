@@ -167,6 +167,45 @@ class GenesisTransaction:
         return sha256(self.raw_tx.encode()).hexdigest()
 
 
+class MiningTransaction:
+    '''
+
+    '''
+    '''
+    BIT VALUES
+    '''
+    HEIGHT_BITS = 64
+    REWARD_BITS = 32
+    OUTPUT_LENGTH_BITS = 8
+
+    def __init__(self, height: int, reward: int, raw_utxo_output: str):
+        '''
+
+        '''
+        # Fix type
+        self.type = format(2, f'0{Transaction.TYPE_BITS // 4}x')
+
+        # Format height
+        self.height = format(height, f'0{self.HEIGHT_BITS // 4}x')
+
+        # Format reward
+        self.reward = format(reward, f'0{self.REWARD_BITS // 4}x')
+
+        # Get and format output length
+        self.output_length = format(len(raw_utxo_output), f'0{self.OUTPUT_LENGTH_BITS // 4}x')
+
+        # Get raw output and save as UTXO_OUTPUT object
+        self.mining_output = decode_raw_output_utxo(raw_utxo_output)
+
+    @property
+    def raw_tx(self):
+        return self.type + self.height + self.reward + self.output_length + self.mining_output.raw_utxo
+
+    @property
+    def id(self):
+        return sha256(self.raw_tx.encode()).hexdigest()
+
+
 '''
 Decoding
 '''
@@ -215,11 +254,25 @@ def decode_raw_transaction(raw_tx: str):
         return GenesisTransaction(a_coeff=a, b_coeff=b, prime=p, generator_x=gx, generator_y=gy, group_order=order,
                                   mine_amount=mine_amount, reward=reward, target=target)
 
-
-
-
     elif type == 2:
-        pass
+        # Set index variables
+        height_index = MiningTransaction.HEIGHT_BITS // 4
+        reward_index = MiningTransaction.REWARD_BITS // 4
+        output_length_index = MiningTransaction.OUTPUT_LENGTH_BITS // 4
+
+        index1 = type_index
+        index2 = index1 + height_index
+        index3 = index2 + reward_index
+        index4 = index3 + output_length_index
+
+        height = int(raw_tx[index1:index2], 16)
+        reward = int(raw_tx[index2:index3], 16)
+        output_length = int(raw_tx[index3:index4], 16)
+
+        index5 = index4 + output_length
+        raw_output = raw_tx[index4:index5]
+        return MiningTransaction(height, reward, raw_output)
+
     else:
 
         # Set index variables

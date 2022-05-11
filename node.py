@@ -16,7 +16,7 @@ from helpers import utc_to_seconds, list_to_node, verify_checksum
 from miner import Miner
 from network import get_ip, get_local_ip, close_socket, create_socket, send_to_client, send_to_server, \
     receive_event_data, receive_client_message
-from transaction import Transaction, decode_raw_transaction
+from transaction import Transaction, decode_raw_transaction, GenesisTransaction, MiningTransaction
 from utxo import UTXO_OUTPUT, UTXO_INPUT
 from wallet import Wallet
 import json
@@ -80,7 +80,13 @@ class Node:
         print('Instantiating Blockchain and calculating hash_rate. This may take a moment.')
 
         # Instantiate the Blockchain
+        start_time = utc_to_seconds()
         self.blockchain = Blockchain()
+        mining_time = utc_to_seconds() - start_time
+        hash_rate = mining_time // self.blockchain.GENESIS_NONCE
+
+        # Create Mining stats dict from genesis block
+        self.mining_stats = {"mining_time": mining_time, "hash_rate": hash_rate}
 
         # Create Miner
         self.miner = Miner()
@@ -102,9 +108,6 @@ class Node:
 
         # Create UTXO tracking dictionary
         self.consumed_utxos = {}
-
-        # Create Mining stats dict from genesis block
-        self.mining_stats = self.blockchain.genesis_mining_stats
 
         # Setup server
         self.listening_address = '0.0.0.0'
@@ -366,8 +369,7 @@ class Node:
             # Create Mining Transaction
             mining_amount = self.get_mining_amount()
             mining_output = UTXO_OUTPUT(mining_amount, self.wallet.address)
-            mining_transaction = Transaction(inputs=[], outputs=[mining_output.raw_utxo],
-                                             min_height=self.blockchain.height + 1)
+            mining_transaction = Transaction(inputs=[], outputs=[mining_output.raw_utxo])
             self.validated_transactions.insert(0, mining_transaction.raw_tx)
 
             # Create candidate block
