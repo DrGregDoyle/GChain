@@ -38,8 +38,8 @@ def test_consensus_algorithm():
 
     # Connect to network
     # n2.connect_to_network(n1.local_node, use_local=True)
-    n1.connect_to_node(n2)
-    n2.connect_to_node(n1)
+    n1.connect_to_node(n2.local_node)
+    n2.connect_to_node(n1.local_node)
     n2.achieve_consensus()
 
     # Verify block ids
