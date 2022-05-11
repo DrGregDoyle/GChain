@@ -17,8 +17,8 @@ def test_consensus_algorithm():
     '''
     We verify that the consensus algorithm sorts hashes with the same frequency by timestamp
     '''
-    n1 = Node()
-    n2 = Node()
+    n1 = Node(use_local=True)
+    n2 = Node(use_local=True)
 
     # Mine N1 Block
     n1.start_miner()
@@ -37,11 +37,11 @@ def test_consensus_algorithm():
     id2 = decode_raw_block(n2.last_block).id
 
     # Connect to network
-    # n2.connect_to_network(n1.local_node, use_local=True)
-    n1.connect_to_node(n2.local_node)
-    n2.connect_to_node(n1.local_node)
-    n2.match_to_consensus_chain()
-    n2.get_missing_blocks()
+    n2.connect_to_network(n1.local_node, use_local=True)
+    # n1.connect_to_node(n2.local_node)
+    # n2.connect_to_node(n1.local_node)
+    # n2.match_to_consensus_chain()
+    # n2.get_missing_blocks()
 
     # Verify block ids
     assert decode_raw_block(n1.last_block).id == id1

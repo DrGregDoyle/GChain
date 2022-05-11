@@ -72,7 +72,7 @@ class Node:
     '''
     HASHINDEX_BITS = 32
 
-    def __init__(self, wallet=None):
+    def __init__(self, wallet=None, use_local=False):
         '''
 
         '''
@@ -121,6 +121,9 @@ class Node:
 
         # Setup consensus dict for nodes and their status
         self.consensus_dict = {}
+
+        # Use local node - for testing
+        self.use_local = use_local
 
         # Start Event Listener
         self.start_event_listener()
@@ -659,7 +662,10 @@ class Node:
         print(f'Local node: {self.local_node}')
 
         # Add server node to node_list
-        self.node_list.append(self.server_node)
+        if self.use_local:
+            self.node_list.append(self.local_node)
+        else:
+            self.node_list.append(self.server_node)
 
         # Add status to consensus dict
         self.update_status()
@@ -878,7 +884,7 @@ class Node:
             print(f'Cannot connect to own address: {node}')
             return False
 
-    def connect_to_network(self, node: tuple, use_local=False):
+    def connect_to_network(self, node: tuple):
         '''
         We send a network request to a node - which means we will receive a node_list.
         For all the new nodes in the node_list, we will run connect_to_node
@@ -894,7 +900,7 @@ class Node:
                 try:
                     network_socket = create_socket()
                     network_socket.connect(node)
-                    if not use_local:
+                    if not self.use_local:
                         send_to_server(network_socket, 2, json.dumps(self.server_node))
                     else:
                         send_to_server(network_socket, 2, json.dumps(self.local_node))
