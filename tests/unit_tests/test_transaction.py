@@ -4,7 +4,7 @@ Testing transactions
 import random
 import string
 import numpy as np
-from transaction import Transaction, decode_raw_transaction
+from transaction import Transaction, decode_raw_transaction, GenesisTransaction
 from utxo import UTXO_OUTPUT, UTXO_INPUT
 import secrets
 from hashlib import sha256
@@ -45,3 +45,9 @@ def test_raw_transaction():
 
     assert new_t.raw_tx == raw
     assert new_t.id == t.id
+
+
+def test_genesis_transaction():
+    g = GenesisTransaction()
+    g1 = decode_raw_transaction(g.raw_tx)
+    assert g.raw_tx == g1.raw_tx

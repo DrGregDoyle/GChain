@@ -1,8 +1,5 @@
 '''
 Methods for ECC cryptography
-
-#TODO:
-    -Implement Schoof's algorithm
 '''
 
 '''Imports'''
@@ -209,7 +206,7 @@ class EllipticCurve:
         '''
         Using the legendre symbol addition formula
 
-        E(F_p) = \sum_{x \in F_p} ( (x^3 + ax + b) | p )
+        E(F_p) = sum_{x in F_p} ( (x^3 + ax + b) | p )
 
         where the right most term is the Legendre symbol
         '''

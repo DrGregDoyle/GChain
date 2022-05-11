@@ -295,7 +295,6 @@ class Blockchain:
     '''
 
     def create_genesis_block(self):
-        # TODO: Use genesis block to establish hashrate
         output_utxo = UTXO_OUTPUT(self.determine_reward(), self.GENESIS_ADDRESS)
         genesis_tx = Transaction(inputs=[], outputs=[output_utxo.raw_utxo])
         genesis_block = Block('', self.determine_target(), 0, [genesis_tx.raw_tx],
