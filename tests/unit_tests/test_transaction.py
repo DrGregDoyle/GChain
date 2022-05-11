@@ -4,7 +4,7 @@ Testing transactions
 import random
 import string
 import numpy as np
-from transaction import Transaction, decode_raw_transaction, GenesisTransaction
+from transaction import Transaction, decode_raw_transaction, GenesisTransaction, MiningTransaction
 from utxo import UTXO_OUTPUT, UTXO_INPUT
 import secrets
 from hashlib import sha256
@@ -51,3 +51,17 @@ def test_genesis_transaction():
     g = GenesisTransaction()
     g1 = decode_raw_transaction(g.raw_tx)
     assert g.raw_tx == g1.raw_tx
+
+
+def test_mining_transaction():
+    random_height = secrets.randbits(64)
+    random_reward = secrets.randbits(32)
+
+    w = Wallet()
+    output1 = UTXO_OUTPUT(secrets.randbelow(1000), w.address)
+    mt1 = MiningTransaction(random_height, random_reward, output1.raw_utxo)
+    mt2 = decode_raw_transaction(mt1.raw_tx)
+
+    assert mt1.raw_tx == mt2.raw_tx
+    assert int(mt2.height, 16) == random_height
+    assert int(mt2.reward, 16) == random_reward
