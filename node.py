@@ -1140,6 +1140,10 @@ class Node:
                 # Logging
                 print(f'Failed to connect to {node} for block at index {index}')
                 retries += 1
+            except TimeoutError:
+                # Logging
+                print(f'Timeout error to {node}')
+                retries += 1
 
         return raw_block
 
