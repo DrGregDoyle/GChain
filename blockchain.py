@@ -47,9 +47,9 @@ class Blockchain:
     '''
     GENESIS CONSTANTS
     '''
-    GENESIS_ID = '0000008f9a191320f71990f02c5b5abd40e4d9f17cd0cb7cc911a91e29f5fb49'
+    GENESIS_ID = '0000000182ec0a016fe937342eaf96882eb4c91953e417bb4428c2f7101ba831'
     GENESIS_TIMESTAMP = 1651769733
-    GENESIS_NONCE = 2647960
+    GENESIS_NONCE = 52380188
 
     # GENESIS_A = 0
     # GENESIS_B = 7
@@ -69,11 +69,11 @@ class Blockchain:
         self.utxos = pd.DataFrame(columns=self.COLUMNS)
 
         # Generate genesis block
-        raw_genesis_block = self.create_genesis_block()
-        self.add_block(raw_genesis_block)
-
+        ##LOGGING
+        print('Creating genesis block in Blockchain. This may take a moment.')
+        self.create_genesis_block()
         # Get Genesis TX values
-        genesis_block = decode_raw_block(raw_genesis_block)
+        genesis_block = decode_raw_block(self.last_block)
         genesis_tx = genesis_block.transactions[0]
 
         # Get curve parameters
@@ -85,6 +85,15 @@ class Blockchain:
 
         # Instantiate curve
         self.curve = EllipticCurve(a=self.a, b=self.b, p=self.p, generator=self.generator, order=self.group_order)
+
+        # Get mining values
+        self.total_mining_amount = int(genesis_tx.amount_to_mine, 16)
+        starting_mining_reward = int(genesis_tx.starting_reward, 16)
+        starting_target = int(genesis_tx.starting_target, 16)
+
+        # Adjust target and reward
+        self.determine_reward(starting_mining_reward)
+        self.determine_target(starting_target)
 
     '''
     PROPERTIES
@@ -143,14 +152,14 @@ class Blockchain:
     DETERMINE MINING PROPERTIES
     '''
 
-    def determine_reward(self):
+    def determine_reward(self, previous_reward: int):
         '''
         Will determine a reward for miners based on the state of the chain
         '''
-        return 50
+        return previous_reward
 
-    def determine_target(self):
-        return 24  # HARDCODED FOR GENESIS TESTING STRINGS
+    def determine_target(self, previous_target: int):
+        return previous_target
 
     '''
     CONSUME UTXO INPUTS
@@ -186,16 +195,11 @@ class Blockchain:
             return False
 
         # Verify block header values
-        if self.chain != []:
-            last_block = decode_raw_block(self.last_block)
-            if last_block.id != candidate_block.prev_hash:
-                # Logging
-                print('Previous hash error in block')
-                return False
-        else:
-            # Add genesis block
-            self.chain.append(raw_block)
-            return True
+        last_block = decode_raw_block(self.last_block)
+        if last_block.id != candidate_block.prev_hash:
+            # Logging
+            print('Previous hash error in block')
+            return False
 
         # Consumed UTXO trackers
         consumed_inputs = []
@@ -204,39 +208,70 @@ class Blockchain:
         output_utxo_df = pd.DataFrame(columns=self.COLUMNS)
 
         # Iterate over Transactions
+        tx_count = 1
         for tx_object in candidate_block.transactions:
 
-            # Validate the inputs.
-            for i in tx_object.inputs:
-                # Get output UTXO identifying values
-                tx_id = i.tx_id
-                tx_index = int(i.tx_index, 16)
-
-                # Check that output utxo exists, return False if not
-                output_index = self.utxos.index[(self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
-                if output_index.empty:
+            # Verify type
+            if tx_object.type == '02':
+                # Verify height of mined block
+                if int(tx_object.height, 16) != self.height + 1:
                     # Logging
-                    print('Empty output index error')
+                    print('Height error in block')
                     return False
 
-                # Validate the input utxo signature against the output utxo address
-                output_address = self.utxos.loc[output_index]['address'].values[0]
+                # # Verify reward
+                # if int(tx_object.reward, 16) != self.determine_reward():
+                #     # Logging
+                #     print('Reward error in block')
+                #     return False
 
-                if not self.validate_signature(i.signature, output_address, tx_id, ):
+                # Verify mining amount
+                if int(tx_object.reward, 16) > self.total_mining_amount:
                     # Logging
-                    print('Validate signature error')
+                    print('Reward exceeds total mining amount')
                     return False
 
-                # Scheduled input for consumption after all validation done
-                consumed_inputs.append(i)
+                # Deduct reward from total_mining_amount
+                self.total_mining_amount -= int(tx_object.reward, 16)
 
-            # Add the new outputs. Use count for the index
-            count = 0
-            for output_utxo in tx_object.outputs:
-                output_row = pd.DataFrame([[tx_object.id, count, output_utxo.amount, output_utxo.address]],
-                                          columns=self.COLUMNS)
+                # Add output utxo - mining tx always has 0 index
+                output_row = pd.DataFrame(
+                    [[tx_object.id, 0, tx_object.mining_output.amount, tx_object.mining_output.address]],
+                    columns=self.COLUMNS)
                 output_utxo_df = pd.concat([output_utxo_df, output_row], ignore_index=True)
-                count += 1
+            else:
+                # Validate the inputs.
+                for i in tx_object.inputs:
+                    # Get output UTXO identifying values
+                    tx_id = i.tx_id
+                    tx_index = int(i.tx_index, 16)
+
+                    # Check that output utxo exists, return False if not
+                    output_index = self.utxos.index[
+                        (self.utxos['tx_id'] == tx_id) & (self.utxos['tx_index'] == tx_index)]
+                    if output_index.empty:
+                        # Logging
+                        print('Empty output index error')
+                        return False
+
+                    # Validate the input utxo signature against the output utxo address
+                    output_address = self.utxos.loc[output_index]['address'].values[0]
+
+                    if not self.validate_signature(i.signature, output_address, tx_id, ):
+                        # Logging
+                        print('Validate signature error')
+                        return False
+
+                    # Scheduled input for consumption after all validation done
+                    consumed_inputs.append(i)
+
+                # Add the new outputs. Use count for the index
+
+                for output_utxo in tx_object.outputs:
+                    output_row = pd.DataFrame([[tx_object.id, tx_count, output_utxo.amount, output_utxo.address]],
+                                              columns=self.COLUMNS)
+                    output_utxo_df = pd.concat([output_utxo_df, output_row], ignore_index=True)
+                    tx_count += 1
 
         ##ALL VALIDATION COMPLETE##
         # Consume the inputs
@@ -270,36 +305,50 @@ class Blockchain:
         for tx in removed_block.transactions:
 
             id = tx.id
-            output_count = 0
+            output_count = 1
+            type = tx.type
 
-            # Drop all utxo outputs
-            for t in tx.outputs:
-                output_index = self.utxos.index[(self.utxos['tx_id'] == id) & (self.utxos['tx_index'] == output_count)]
+            # Reverse mining tx
+            if type == '02':
+                output_index = self.utxos.index[(self.utxos['tx_id'] == id) & (self.utxos['tx_index'] == 0)]
                 try:
-                    assert not output_index.empty, 'Pop block error, output utxo already consumed'
+                    assert not output_index.empty, 'Pop block error for mining tx, output utxo already consumed'
                 except AssertionError as msg:
                     # Logging
                     print(msg)
                     return False
+                self.total_mining_amount += int(tx.reward, 16)
                 self.utxos = self.utxos.drop(self.utxos.index[output_index])
-                output_count += 1
+            else:
+                # Drop all utxo outputs
+                for t in tx.outputs:
+                    output_index = self.utxos.index[
+                        (self.utxos['tx_id'] == id) & (self.utxos['tx_index'] == output_count)]
+                    try:
+                        assert not output_index.empty, 'Pop block error, output utxo already consumed'
+                    except AssertionError as msg:
+                        # Logging
+                        print(msg)
+                        return False
+                    self.utxos = self.utxos.drop(self.utxos.index[output_index])
+                    output_count += 1
 
-            # Restore all outputs for the inputs
-            for i in tx.inputs:
-                tx_id = i.tx_id
-                tx_index = int(i.tx_index, 16)
-                raw_tx = ''
-                count = 0
-                while raw_tx == '':
-                    temp_block = decode_raw_block(self.chain[count])
-                    raw_tx = temp_block.get_raw_tx(tx_id)
-                    count += 1
-                temp_tx = decode_raw_transaction(raw_tx)
-                temp_output = temp_tx.outputs[tx_index]
-                temp_amount = temp_output.amount
-                temp_address = temp_output.address
-                row = pd.DataFrame([[tx_id, tx_index, temp_amount, temp_address]], columns=self.COLUMNS)
-                self.utxos = pd.concat([self.utxos, row], ignore_index=True)
+                # Restore all outputs for the inputs
+                for i in tx.inputs:
+                    tx_id = i.tx_id
+                    tx_index = int(i.tx_index, 16)
+                    raw_tx = ''
+                    count = 0
+                    while raw_tx == '':
+                        temp_block = decode_raw_block(self.chain[count])
+                        raw_tx = temp_block.get_raw_tx(tx_id)
+                        count += 1
+                    temp_tx = decode_raw_transaction(raw_tx)
+                    temp_output = temp_tx.outputs[tx_index]
+                    temp_amount = temp_output.amount
+                    temp_address = temp_output.address
+                    row = pd.DataFrame([[tx_id, tx_index, temp_amount, temp_address]], columns=self.COLUMNS)
+                    self.utxos = pd.concat([self.utxos, row], ignore_index=True)
 
         return True
 
@@ -316,15 +365,9 @@ class Blockchain:
 
         # Mine Block to calculate initial hashrate
         miner = Miner()
-        start_time = utc_to_seconds()
         mined_block = miner.mine_block(genesis_block.raw_block)
-        end_time = utc_to_seconds()
-
-        # Confirm nonce and get hashrate
-        # assert int(decode_raw_block(mined_block).nonce, 16) == self.GENESIS_NONCE
-        # assert int(decode_raw_block(mined_block).timestamp, 16) == self.GENESIS_TIMESTAMP
-        # assert decode_raw_block(mined_block).id == self.GENESIS_ID
-        # mining_time = end_time - start_time
-        # hash_rate = self.GENESIS_NONCE // mining_time
-
-        return mined_block
+        temp_block = decode_raw_block(mined_block)
+        assert int(temp_block.nonce, 16) == self.GENESIS_NONCE
+        assert int(temp_block.id, 16) <= pow(2, 256 - int(temp_block.target, 16))
+        assert temp_block.id == self.GENESIS_ID
+        self.chain.append(mined_block)

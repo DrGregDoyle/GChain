@@ -149,6 +149,10 @@ class Node:
         return self.blockchain.height
 
     @property
+    def total_mining_amount(self):
+        return self.blockchain.total_mining_amount
+
+    @property
     def status(self):
         last_block = decode_raw_block(self.last_block)
         height = self.height
@@ -369,7 +373,8 @@ class Node:
             # Create Mining Transaction
             mining_amount = self.get_mining_amount()
             mining_output = UTXO_OUTPUT(mining_amount, self.wallet.address)
-            mining_transaction = Transaction(inputs=[], outputs=[mining_output.raw_utxo])
+            mining_transaction = MiningTransaction(height=self.height + 1, reward=self.get_mining_reward(),
+                                                   raw_utxo_output=mining_output.raw_utxo)
             self.validated_transactions.insert(0, mining_transaction.raw_tx)
 
             # Create candidate block
@@ -438,13 +443,26 @@ class Node:
         return reward + (total_input_amount - total_output_amount)
 
     def get_mining_reward(self):
-        return self.blockchain.determine_reward()
+        '''
+        '''
+        temp_reward = 0
+        last_block = decode_raw_block(self.last_block)
+        first_tx = last_block.transactions[0]
+        if first_tx.type == '00':
+            temp_reward = int(first_tx.starting_reward, 16)
+        elif first_tx.type == '02':
+            temp_reward = int(first_tx.reward, 16)
+        else:
+            temp_reward = pow(2, GenesisTransaction.REWARD_EXPONENT)
+        return self.blockchain.determine_reward(temp_reward)
 
     def get_mining_target(self):
         '''
         Algorithm for determining mining target goes here
         '''
-        return self.blockchain.determine_target()
+        last_block = decode_raw_block(self.last_block)
+        old_target = int(last_block.target, 16)
+        return self.blockchain.determine_target(old_target)
 
     '''
     ADD BLOCK
