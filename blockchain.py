@@ -47,9 +47,9 @@ class Blockchain:
     '''
     GENESIS CONSTANTS
     '''
-    GENESIS_ID = '0000000182ec0a016fe937342eaf96882eb4c91953e417bb4428c2f7101ba831'
+    GENESIS_ID = '00000008923c8a7549f38ea9f29240e387abb78523a0ca018ee91395007c83aa'
     GENESIS_TIMESTAMP = 1651769733
-    GENESIS_NONCE = 52380188
+    GENESIS_NONCE = 28911710
 
     def __init__(self):
         '''
@@ -382,7 +382,7 @@ class Blockchain:
         miner = Miner()
         mined_block = miner.mine_block(genesis_block.raw_block)
         temp_block = decode_raw_block(mined_block)
-        # assert int(temp_block.nonce, 16) == self.GENESIS_NONCE
+        assert int(temp_block.nonce, 16) == self.GENESIS_NONCE
         assert int(temp_block.id, 16) <= pow(2, 256 - int(temp_block.target, 16))
-        # assert temp_block.id == self.GENESIS_ID
+        assert temp_block.id == self.GENESIS_ID
         self.chain.append(mined_block)
