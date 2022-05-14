@@ -92,6 +92,10 @@ def verify_address_checksum(address: str, CHECKSUM_BITS=32) -> bool:
     digest = hex_address[:-CHECKSUM_BITS // 4]
     checksum = hex_address[-CHECKSUM_BITS // 4:]
 
+    # Make sure digest is 40 characters (coming from SHA1)
+    while len(digest) != 40:
+        digest = '0' + digest
+
     # Find the checksum from the digest
     digest_checksum = sha256(sha256(digest.encode()).hexdigest().encode()).hexdigest()[:CHECKSUM_BITS // 4]
 

@@ -1,9 +1,38 @@
 '''
 The Transaction class
 
-The Transaction will contain the following fields with assigned sizes:
+In the Blockchain, we will have multiple types of transactions:
+    1) The Genesis Transaction - a blockchain-unique transaction containing the necessary variables for the Blockchain to live
+    2) The Mining Transaction - a block-unique transaction containing the necessary variables to determine the Block reward
+    3) The Coin Transaction - a unique transaction containing information to transfer ownership of coins
 
-Max byte size ~ 42kb
+Genesis Transaction: Max byte size ~ 146bytes
+#========================================================================#
+#|  field           |   bit size    |   hex chars   |   byte size       |#
+#========================================================================#
+#|  type            |   8           |   2           |   1               |#
+#|  a_coeff         |   8           |   2           |   1               |#
+#|  b_coeff         |   8           |   2           |   1               |#
+#|  prime           |   256         |   64          |   32              |#
+#|  generator_x     |   256         |   64          |   32              |#
+#|  generator_y     |   256         |   64          |   32              |#
+#|  order           |   256         |   64          |   32              |#
+#|  total_mine      |   64          |   16          |   8               |#
+#|  starting reward |   32          |   8           |   4               |#
+#|  starting target |   8           |   2           |   1               |#
+#|  heartbeat       |   16          |   4           |   2               |#
+#========================================================================#
+
+
+Mining Transaction: Max byte size
+#====================================================================#
+#|  field       |   bit size    |   hex chars   |   byte size       |#
+#====================================================================#
+#|  type        |   8           |   2           |   1               |#
+#====================================================================#
+
+
+Coin Transaction: Max byte size ~ 42kb
 #====================================================================#
 #|  field       |   bit size    |   hex chars   |   byte size       |#
 #====================================================================#
@@ -99,7 +128,6 @@ class GenesisTransaction:
     '''
     FORMATTING BITS
     '''
-    BITLENGTH_BITS = 16
     ACOEFF_BITS = 8
     BCOEFF_BITS = 8
     TARGET_BITS = 8
@@ -108,6 +136,7 @@ class GenesisTransaction:
     GROUP_ORDER_BITS = 256
     MINE_AMOUNT_BITS = 64
     MINE_REWARD_BITS = 32
+    HEARTBEAT_BITS = 16
 
     '''
     ELLIPTIC CURVE VALUES
@@ -125,13 +154,11 @@ class GenesisTransaction:
     AMOUNT_EXPONENT = 41
     REWARD_EXPONENT = 10
     STARTING_TARGET = 25
-
-    '''
-    
-    '''
+    HEARTBEAT = 60
 
     def __init__(self, a_coeff=a, b_coeff=b, prime=p, generator_x=gx, generator_y=gy, group_order=order,
-                 mine_amount=pow(2, AMOUNT_EXPONENT), reward=pow(2, REWARD_EXPONENT), target=STARTING_TARGET):
+                 mine_amount=pow(2, AMOUNT_EXPONENT), reward=pow(2, REWARD_EXPONENT), target=STARTING_TARGET,
+                 heartbeat=HEARTBEAT):
         # Fix type
         self.type = format(0, f'0{Transaction.TYPE_BITS // 4}x')
 
@@ -158,9 +185,12 @@ class GenesisTransaction:
         # Create initial starting target
         self.starting_target = format(target, f'0{self.TARGET_BITS // 4}x')
 
+        # Format heartbeat
+        self.heartbeat = format(heartbeat, f'0{self.HEARTBEAT_BITS // 4}x')
+
     @property
     def raw_tx(self):
-        return self.type + self.acoeff + self.bcoeff + self.prime + self.generator_x + self.generator_y + self.group_order + self.amount_to_mine + self.starting_reward + self.starting_target
+        return self.type + self.acoeff + self.bcoeff + self.prime + self.generator_x + self.generator_y + self.group_order + self.amount_to_mine + self.starting_reward + self.starting_target + self.heartbeat
 
     @property
     def id(self):
@@ -229,6 +259,7 @@ def decode_raw_transaction(raw_tx: str):
         mine_amount_index = GenesisTransaction.MINE_AMOUNT_BITS // 4
         reward_index = GenesisTransaction.MINE_REWARD_BITS // 4
         target_index = GenesisTransaction.TARGET_BITS // 4
+        hearbeat_index = GenesisTransaction.HEARTBEAT_BITS // 4
 
         index1 = type_index
         index2 = index1 + acoeff_index
@@ -240,6 +271,7 @@ def decode_raw_transaction(raw_tx: str):
         index8 = index7 + mine_amount_index
         index9 = index8 + reward_index
         index10 = index9 + target_index
+        index11 = index10 + hearbeat_index
 
         a = int(raw_tx[index1:index2], 16)
         b = int(raw_tx[index2:index3], 16)
@@ -250,9 +282,10 @@ def decode_raw_transaction(raw_tx: str):
         mine_amount = int(raw_tx[index7:index8], 16)
         reward = int(raw_tx[index8:index9], 16)
         target = int(raw_tx[index9:index10], 16)
+        hearbeat = int(raw_tx[index10:index11], 16)
 
         return GenesisTransaction(a_coeff=a, b_coeff=b, prime=p, generator_x=gx, generator_y=gy, group_order=order,
-                                  mine_amount=mine_amount, reward=reward, target=target)
+                                  mine_amount=mine_amount, reward=reward, target=target, heartbeat=hearbeat)
 
     elif type == 2:
         # Set index variables

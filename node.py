@@ -193,6 +193,14 @@ class Node:
             hashlist.append(decode_raw_block(raw_block).id)
         return hashlist
 
+    @property
+    def reward(self):
+        return self.blockchain.reward
+
+    @property
+    def target(self):
+        return self.blockchain.target
+
     '''
     STATUS
     '''
@@ -373,13 +381,13 @@ class Node:
             # Create Mining Transaction
             mining_amount = self.get_mining_amount()
             mining_output = UTXO_OUTPUT(mining_amount, self.wallet.address)
-            mining_transaction = MiningTransaction(height=self.height + 1, reward=self.get_mining_reward(),
+            mining_transaction = MiningTransaction(height=self.height + 1, reward=self.reward,
                                                    raw_utxo_output=mining_output.raw_utxo)
             self.validated_transactions.insert(0, mining_transaction.raw_tx)
 
             # Create candidate block
             last_block = decode_raw_block(self.last_block)
-            new_block = Block(last_block.id, self.get_mining_target(), 0, self.validated_transactions)
+            new_block = Block(last_block.id, self.target, 0, self.validated_transactions)
 
             # Mine block
             start_time = utc_to_seconds()
@@ -421,7 +429,7 @@ class Node:
 
         total_input_amount = 0
         total_output_amount = 0
-        reward = self.get_mining_reward()
+        reward = self.blockchain.reward
 
         for t in self.validated_transactions:
             # Recover tx
@@ -441,28 +449,6 @@ class Node:
 
         assert total_input_amount >= total_output_amount
         return reward + (total_input_amount - total_output_amount)
-
-    def get_mining_reward(self):
-        '''
-        '''
-        temp_reward = 0
-        last_block = decode_raw_block(self.last_block)
-        first_tx = last_block.transactions[0]
-        if first_tx.type == '00':
-            temp_reward = int(first_tx.starting_reward, 16)
-        elif first_tx.type == '02':
-            temp_reward = int(first_tx.reward, 16)
-        else:
-            temp_reward = pow(2, GenesisTransaction.REWARD_EXPONENT)
-        return self.blockchain.determine_reward(temp_reward)
-
-    def get_mining_target(self):
-        '''
-        Algorithm for determining mining target goes here
-        '''
-        last_block = decode_raw_block(self.last_block)
-        old_target = int(last_block.target, 16)
-        return self.blockchain.determine_target(old_target)
 
     '''
     ADD BLOCK
