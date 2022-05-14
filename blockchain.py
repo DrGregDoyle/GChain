@@ -154,6 +154,8 @@ class Blockchain:
         '''
         Will determine a reward for miners based on the state of the chain
         '''
+        heartrate = self.determine_heartbeat()
+        
         return self.reward
 
     def determine_target(self):
